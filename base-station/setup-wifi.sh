@@ -22,7 +22,7 @@ fi
 
 # Delete all previous rtk- managed connections
 echo "Cleaning old rtk- connections..."
-nmcli -t -f NAME connection show | grep "^${PREFIX}" | while IFS= read -r name; do
+nmcli -t -f NAME connection show | { grep "^${PREFIX}" || true; } | while IFS= read -r name; do
   echo "  Removing: $name"
   nmcli connection delete "$name" 2>/dev/null || true
 done
