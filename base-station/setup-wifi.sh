@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# setup-wifi.sh — Configure WiFi networks on rtkbase-pi from wifi-networks.conf
+# setup-wifi.sh — Configure WiFi networks on rtkbase-pi from rtkbase.conf
 # Assigns each network to both wlan0 (internal, fallback) and wlan1 (Alfa USB, preferred).
 # Safe to re-run: deletes old managed connections before recreating.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONF="$SCRIPT_DIR/wifi-networks.conf"
+CONF="$SCRIPT_DIR/rtkbase.conf"
 WLAN0_METRIC_BUMP=550
 PREFIX="rtk-"
 
@@ -20,6 +20,11 @@ if [[ $EUID -ne 0 ]]; then
   exit 1
 fi
 
+# Extract WIFI_ lines from config
+wifi_lines() {
+  grep '^WIFI_[0-9]*=' "$CONF" | sed 's/^WIFI_[0-9]*=//'
+}
+
 # Delete all previous rtk- managed connections
 echo "Cleaning old rtk- connections..."
 nmcli -t -f NAME connection show | { grep "^${PREFIX}" || true; } | while IFS= read -r name; do
@@ -28,9 +33,9 @@ nmcli -t -f NAME connection show | { grep "^${PREFIX}" || true; } | while IFS= r
 done
 
 # Read config and create connections
-while IFS='|' read -r ssid psk priority metric; do
-  # Skip comments and blank lines
-  [[ -z "$ssid" || "$ssid" =~ ^[[:space:]]*# ]] && continue
+wifi_lines | while IFS='|' read -r ssid psk priority metric; do
+  # Skip empty
+  [[ -z "$ssid" ]] && continue
 
   # Trim whitespace
   ssid="$(echo "$ssid" | xargs)"
@@ -74,7 +79,7 @@ while IFS='|' read -r ssid psk priority metric; do
     connection.autoconnect-priority "$priority" \
     > /dev/null
 
-done < "$CONF"
+done
 
 # Lower priority of the original netplan connection so ours win
 if nmcli connection show netplan-wlan0-TranquilityHarbor &>/dev/null; then
@@ -90,18 +95,21 @@ echo "Activating connections..."
 
 # Try to bring up wlan1 on the highest-priority visible network
 activated=false
-while IFS='|' read -r ssid psk priority metric; do
-  [[ -z "$ssid" || "$ssid" =~ ^[[:space:]]*# ]] && continue
+wifi_lines | sort -t'|' -k3 -rn | while IFS='|' read -r ssid psk priority metric; do
+  [[ -z "$ssid" ]] && continue
   ssid="$(echo "$ssid" | xargs)"
   con_name="${PREFIX}wlan1-${ssid// /-}"
   if nmcli connection up "$con_name" 2>/dev/null; then
     echo "  wlan1 connected: $ssid"
-    activated=true
+    # Signal success by touching a temp file (subshell can't set parent vars)
+    touch /tmp/.rtk-wifi-activated
     break
   fi
-done < <(sort -t'|' -k3 -rn "$CONF")
+done
 
-if [[ "$activated" == false ]]; then
+if [[ -f /tmp/.rtk-wifi-activated ]]; then
+  rm -f /tmp/.rtk-wifi-activated
+else
   echo "  wlan1: no configured network in range (will auto-connect when available)"
 fi
 
