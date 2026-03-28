@@ -1,0 +1,79 @@
+{
+  "models": {
+    "Samsung Galaxy A10e (SM-A102U)": {
+      "brand": "SAMSUNG",
+      "api_model": "Galaxy A10e",
+      "year": 2019,
+      "region": "US",
+      "tacs": [
+        "35274138",
+        "35698310",
+        "35836910",
+        "35375611",
+        "35632711"
+      ]
+    },
+    "Samsung Galaxy A11 (SM-A115U)": {
+      "brand": "SAMSUNG",
+      "api_model": "Galaxy A11",
+      "year": 2020,
+      "region": "US",
+      "tacs": [
+        "35469811",
+        "35469911"
+      ]
+    },
+    "Samsung Galaxy A21 (SM-A215U)": {
+      "brand": "SAMSUNG",
+      "api_model": "Galaxy A21",
+      "year": 2020,
+      "region": "US",
+      "tacs": [
+        "35423011",
+        "35423111",
+        "35225255"
+      ]
+    },
+    "Samsung Galaxy A01 (SM-A015U)": {
+      "brand": "SAMSUNG",
+      "api_model": "Galaxy A01",
+      "year": 2020,
+      "region": "US",
+      "tacs": [
+        "35231915",
+        "35172111",
+        "35469011",
+        "35469111"
+      ]
+    },
+    "Samsung Galaxy A51 (SM-A515U)": {
+      "brand": "SAMSUNG",
+      "api_model": "Galaxy A51",
+      "year": 2020,
+      "region": "US",
+      "tacs": [
+        "35456411",
+        "35616811"
+      ]
+    },
+    "LG K51 (LM-K500UM)": {
+      "brand": "LG",
+      "api_model": "K51",
+      "year": 2020,
+      "region": "US",
+      "tacs": [
+        "35459111",
+        "35504161",
+        "35241143",
+        "35248811",
+        "35454411"
+      ]
+    }
+  },
+  "_meta": {
+    "verified_date": "2026-03-08",
+    "verified_source": "imei.info API (service_id=0, Basic IMEI Check)",
+    "total_tacs": 21,
+    "total_models": 6
+  }
+}
