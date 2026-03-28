@@ -8,10 +8,17 @@
 | OS | Debian GNU/Linux 13 (trixie) aarch64 |
 | Kernel | 6.12.47+rpt-rpi-v8 |
 | Hostname | `rtkbase-pi` |
-| Local IP | 192.168.1.162 (wlan0) |
+| Local IP | 192.168.1.162 (wlan0), 192.168.1.110 (wlan1) |
 | Tailscale IP | 100.68.19.26 |
 | Tailscale hostname | `rtkbase-pi.alligator-perch.ts.net` |
 | Tailscale tag | `tag:rtksurveying` |
+| Modem | Waveshare SIM7600G-H 4G USB Dongle |
+| Modem USB ID | `1e0e:9001` (SimTech) |
+| Modem AT port | `/dev/ttyUSB2` |
+| Original IMEI | `862636051970786` |
+| Active IMEI | `352741384997469` (Samsung Galaxy A10e) |
+| WiFi (internal) | wlan0 — onboard Pi 4 WiFi |
+| WiFi (external) | wlan1 — Alfa AWUS036ACH (mt76x2u driver) |
 
 ## Initial Setup
 
@@ -19,12 +26,12 @@
 
 ```
 sudo raspi-config
-  → Performance Options
-    → Fan
-      → GPIO 14
-      → OK
-      → 60°C trigger temperature
-      → Fan on
+  -> Performance Options
+    -> Fan
+      -> GPIO 14
+      -> OK
+      -> 60 degree C trigger temperature
+      -> Fan on
 ```
 
 ### 2. Install Tailscale
@@ -33,17 +40,12 @@ sudo raspi-config
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo tailscale up --authkey=<YOUR_AUTH_KEY> --hostname=rtkbase-pi
 sudo tailscale set --ssh
-```
-
-Tailscale SSH is enabled — allows passwordless SSH from authorized devices without needing the local user password.
-
-### 3. Enable Tailscale on Boot
-
-```bash
 sudo systemctl enable tailscaled
 ```
 
-### 4. SSH Key Setup
+Tailscale SSH is enabled — allows passwordless SSH from authorized devices without needing the local user password. Enabled on boot via systemd.
+
+### 3. SSH Key Setup
 
 Added authorized keys for passwordless SSH from both workstations:
 
@@ -61,7 +63,7 @@ Connect from either Mac:
 ssh jaredirby@rtkbase-pi
 ```
 
-### 5. Fix Locale
+### 4. Fix Locale
 
 The Pi ships without `en_US.UTF-8` generated, causing warnings on SSH login from macOS.
 
@@ -71,10 +73,23 @@ sudo locale-gen
 sudo update-locale LANG=en_US.UTF-8
 ```
 
-### 6. OS Update
+### 5. OS Update
 
 ```bash
 sudo apt update && sudo apt full-upgrade -y
+```
+
+### 6. Install Tools
+
+```bash
+sudo apt install -y git gh python3-serial minicom
+```
+
+### 7. Clone This Repo
+
+```bash
+echo "<GITHUB_TOKEN>" | gh auth login --with-token
+gh repo clone irbygroup/rtk-surveying
 ```
 
 ## Tailscale ACL — One-Way Access
@@ -97,10 +112,103 @@ curl -X POST -H "Authorization: Bearer $TS_API_KEY" \
   "https://api.tailscale.com/api/v2/device/<DEVICE_ID>/tags"
 ```
 
+## WiFi — Dual Adapter with Failover
+
+Both adapters connect to all configured networks. The Alfa USB adapter (wlan1) is preferred when plugged in; the internal WiFi (wlan0) is the automatic fallback.
+
+| Interface | Adapter | Route Metric | Role |
+|-----------|---------|-------------|------|
+| wlan1 | Alfa AWUS036ACH (mt76x2u) | 50 | Preferred — long-range external |
+| wlan0 | Onboard Pi 4 | 600 | Fallback — internal |
+
+### Configuration
+
+All WiFi networks are defined in `rtkbase.conf` as `WIFI_<n>` entries:
+
+```
+WIFI_1=TranquilityHarbor|<psk>|20|50
+WIFI_2=Jared Phone|<psk>|10|50
+```
+
+Format: `SSID|PASSWORD|PRIORITY|METRIC`
+
+- **PRIORITY**: higher = tried first (NetworkManager autoconnect-priority)
+- **METRIC**: lower = preferred route when multiple interfaces connected
+
+### Apply WiFi Config
+
+```bash
+cd ~/rtk-surveying
+git pull
+sudo bash base-station/setup-wifi.sh
+```
+
+The script is safe to re-run — it deletes old `rtk-` connections before recreating. To add a new network, add a `WIFI_<n>` line to `rtkbase.conf` and re-run.
+
+## SIM7600G-H Modem — IMEI Setup
+
+The modem's original IMEI (`862636051970786`) is not recognized by carriers like Straight Talk because it's a cellular modem, not a phone. A generated IMEI from a known phone model is required for activation.
+
+### Current IMEI
+
+| Field | Value |
+|-------|-------|
+| Original | `862636051970786` (SIM7600G-H modem) |
+| Active | `352741384997469` (Samsung Galaxy A10e SM-A102U) |
+| Set date | 2026-03-28 |
+| Checks passed | Model, Lost Device, Verizon, T-Mobile, Blacklist |
+
+### Generate a New IMEI
+
+The IMEI generator script is at `base-station/imei-generator/generate.py`. It uses the imei.info API to generate and verify IMEIs against carrier databases.
+
+```bash
+cd ~/rtk-surveying/base-station
+source <(grep '^IMEI_' rtkbase.conf | sed 's/^/export /')
+python3 imei-generator/generate.py --quiet
+```
+
+### Set IMEI on Modem
+
+```bash
+sudo systemctl stop ModemManager
+python3 -c "
+import serial, time
+s = serial.Serial('/dev/ttyUSB2', 115200, timeout=3)
+s.write(b'AT+SIMEI=<NEW_IMEI>\r\n')
+time.sleep(2)
+print(s.read(s.in_waiting).decode())
+s.write(b'AT+CFUN=1,1\r\n')  # reboot modem
+time.sleep(2)
+print(s.read(s.in_waiting).decode())
+s.close()
+"
+# Wait ~15 seconds for modem to reboot, then:
+sudo systemctl start ModemManager
+sudo mmcli -m 0 | grep imei  # verify
+```
+
+The IMEI persists across power cycles (stored in modem NV memory). Save the original and new IMEI in `rtkbase.conf`.
+
 ## Network Interfaces
 
 | Interface | Status | Notes |
 |-----------|--------|-------|
-| wlan0 | Active | 192.168.1.162, primary connectivity |
+| wlan0 | Active | Internal WiFi, fallback (metric 600) |
+| wlan1 | Active | Alfa USB WiFi, preferred (metric 50) |
 | eth0 | Up, no link | Ethernet available but not connected |
-| wlan1 | Up, no link | Second WiFi adapter present but unused |
+| tailscale0 | Active | Tailscale VPN tunnel |
+| cdc-wdm0 | Available | SIM7600 cellular data (not yet configured) |
+
+## File Layout
+
+```
+base-station/
+  rtkbase.conf              # All config: modem, IMEI API, WiFi networks
+  setup-wifi.sh             # Configure WiFi from rtkbase.conf
+  install.md                # This file
+  RTK-Base-Station-Final-Shopping-List.md
+  imei-generator/
+    generate.py             # IMEI generator (from sim7600-dongle-gateway)
+    tac-models.json         # TAC database for US budget phones
+```
