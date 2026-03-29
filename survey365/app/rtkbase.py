@@ -77,12 +77,10 @@ async def write_position(lat: float, lon: float, height: float):
     position_str = f" {lat:.9f} {lon:.9f} {height:.4f}"
     config.set("main", "position", position_str)
 
-    # Write back atomically: write to temp file then rename
-    tmp_path = path.with_suffix(".tmp")
-    with open(tmp_path, "w") as f:
+    # Write directly to the settings file (atomic rename fails on SD cards
+    # when RTKBase has the file open)
+    with open(path, "w") as f:
         config.write(f)
-
-    tmp_path.rename(path)
     logger.info("Updated RTKBase position: lat=%.9f lon=%.9f height=%.4f", lat, lon, height)
 
 
