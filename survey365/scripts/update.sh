@@ -106,6 +106,10 @@ if [[ "$PREV_COMMIT" != "$NEW_COMMIT" ]]; then
     fi
 fi
 
+# ── Stamp cache version into HTML files ─────────────────────────────────
+info "Stamping cache version..."
+bash "$SURVEY365_DIR/scripts/stamp-version.sh"
+
 # ── Restart survey365 service ───────────────────────────────────────────
 info "Restarting survey365 service..."
 

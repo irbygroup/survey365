@@ -277,7 +277,11 @@ else
     die "Invalid sudoers syntax -- removed $SUDOERS_FILE"
 fi
 
-# ── Step 8: Enable and start services ───────────────────────────────────
+# ── Step 8: Stamp cache version ────────────────────────────────────────
+info "Stamping cache version into HTML..."
+bash "$SURVEY365_DIR/scripts/stamp-version.sh"
+
+# ── Step 9: Enable and start services ───────────────────────────────────
 info "Enabling and starting services..."
 
 # Enable survey365 services
