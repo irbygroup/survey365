@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <title>Survey365 - Admin Login</title>
+
+  <!-- Pico.css -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <!-- Survey365 custom styles -->
+  <link rel="stylesheet" href="/css/survey365.css">
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+</head>
+<body class="s365-login-page" x-data="loginPage()" x-cloak>
+
+  <div class="s365-login-card">
+    <h1>Survey365</h1>
+    <p class="subtitle">Admin access</p>
+
+    <form @submit.prevent="doLogin()">
+      <label for="password" class="visually-hidden">Password</label>
+      <input type="password"
+             id="password"
+             x-model="password"
+             placeholder="Enter password"
+             autocomplete="current-password"
+             autofocus
+             required>
+
+      <button type="submit" :disabled="submitting">
+        <span x-show="!submitting">Log In</span>
+        <span x-show="submitting" aria-busy="true">Logging in...</span>
+      </button>
+    </form>
+
+    <p class="login-error" x-show="error" x-text="error"></p>
+
+    <a href="/" class="login-back">Back to map</a>
+  </div>
+
+  <script>
+    function loginPage() {
+      return {
+        password: '',
+        error: '',
+        submitting: false,
+
+        async doLogin() {
+          this.error = '';
+          if (!this.password) {
+            this.error = 'Enter a password';
+            return;
+          }
+
+          this.submitting = true;
+
+          try {
+            var res = await fetch('/api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ password: this.password })
+            });
+
+            if (res.ok) {
+              /* Check if there is a redirect target */
+              var params = new URLSearchParams(window.location.search);
+              var redirect = params.get('next') || '/admin.html';
+              window.location.href = redirect;
+            } else {
+              var data = {};
+              try { data = await res.json(); } catch (_) {}
+              this.error = data.error || 'Invalid password';
+              this.submitting = false;
+            }
+          } catch (err) {
+            this.error = 'Connection failed. Check network.';
+            this.submitting = false;
+          }
+        }
+      };
+    }
+  </script>
+</body>
+</html>

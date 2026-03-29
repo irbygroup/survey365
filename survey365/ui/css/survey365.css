@@ -1,0 +1,1010 @@
+/* ============================================================
+   Survey365 — Custom styles on top of Pico.css
+   Map-centric field operations controller for RTK GNSS
+   Designed for outdoor sunlight readability and gloved touch
+   ============================================================ */
+
+/* --- Design Tokens --- */
+:root {
+  --s365-green: #22c55e;
+  --s365-yellow: #eab308;
+  --s365-orange: #f97316;
+  --s365-red: #ef4444;
+  --s365-gray: #6b7280;
+  --s365-blue: #2563eb;
+  --s365-panel-bg: rgba(15, 23, 42, 0.88);
+  --s365-panel-bg-solid: #0f172a;
+  --s365-panel-radius: 12px;
+  --s365-panel-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  --s365-touch-min: 48px;
+  --s365-text-light: #f1f5f9;
+  --s365-text-muted: #94a3b8;
+}
+
+/* --- Reset: map fills entire viewport --- */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+#map {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+}
+
+/* Alpine.js cloak */
+[x-cloak] { display: none !important; }
+
+/* --- Top Bar --- */
+.s365-top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  pointer-events: none;
+}
+
+.s365-top-bar > * {
+  pointer-events: auto;
+}
+
+.s365-top-bar .s365-search-wrap {
+  flex: 1;
+  max-width: 320px;
+}
+
+.s365-top-bar .s365-search-wrap input {
+  width: 100%;
+  height: var(--s365-touch-min);
+  border: none;
+  border-radius: var(--s365-panel-radius);
+  padding: 0 16px;
+  font-size: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: var(--s365-panel-shadow);
+  margin: 0;
+  color: #1e293b;
+}
+
+.s365-top-bar .s365-search-wrap input::placeholder {
+  color: #94a3b8;
+}
+
+.s365-top-right {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Icon buttons (hamburger, layers) */
+.s365-icon-btn {
+  width: var(--s365-touch-min);
+  height: var(--s365-touch-min);
+  border: none;
+  border-radius: var(--s365-panel-radius);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: var(--s365-panel-shadow);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1e293b;
+  padding: 0;
+  margin: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+
+.s365-icon-btn:hover,
+.s365-icon-btn:active {
+  background: rgba(255, 255, 255, 1);
+}
+
+/* --- Hamburger Menu (slide-out) --- */
+.s365-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.s365-menu {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 280px;
+  max-width: 80vw;
+  z-index: 30;
+  background: #ffffff;
+  box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+  padding: 24px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.s365-menu h4 {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  margin: 20px 0 8px 0;
+  padding: 0;
+}
+
+.s365-menu h4:first-child {
+  margin-top: 0;
+}
+
+.s365-menu button {
+  display: block;
+  width: 100%;
+  min-height: var(--s365-touch-min);
+  padding: 12px 16px;
+  margin: 0 0 4px 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #1e293b;
+  font-size: 16px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.s365-menu button:hover,
+.s365-menu button:active {
+  background: #e2e8f0;
+}
+
+.s365-menu button.danger {
+  color: var(--s365-red);
+  border-color: #fecaca;
+}
+
+.s365-menu hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 16px 0;
+}
+
+.s365-menu .s365-menu-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: 24px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Bottom-left Status Strip --- */
+.s365-status-strip {
+  position: fixed;
+  bottom: 24px;
+  left: 12px;
+  z-index: 15;
+  background: var(--s365-panel-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--s365-text-light);
+  border-radius: var(--s365-panel-radius);
+  padding: 10px 16px;
+  box-shadow: var(--s365-panel-shadow);
+  max-width: calc(100vw - 100px);
+}
+
+.s365-mode-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  white-space: nowrap;
+}
+
+.s365-mode-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.s365-mode-green .s365-mode-dot { background: var(--s365-green); box-shadow: 0 0 8px var(--s365-green); }
+.s365-mode-yellow .s365-mode-dot { background: var(--s365-yellow); box-shadow: 0 0 8px var(--s365-yellow); }
+.s365-mode-orange .s365-mode-dot { background: var(--s365-orange); box-shadow: 0 0 8px var(--s365-orange); }
+.s365-mode-gray .s365-mode-dot { background: var(--s365-gray); }
+.s365-mode-red .s365-mode-dot { background: var(--s365-red); box-shadow: 0 0 8px var(--s365-red); }
+
+/* Pulse animation for broadcasting */
+.s365-mode-green .s365-mode-dot,
+.s365-mode-yellow .s365-mode-dot {
+  animation: s365-pulse 2s ease-in-out infinite;
+}
+
+@keyframes s365-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.s365-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--s365-text-muted);
+  flex-wrap: wrap;
+}
+
+.s365-stats strong {
+  color: var(--s365-text-light);
+  font-weight: 600;
+}
+
+/* --- Bottom-right Controls --- */
+.s365-bottom-right {
+  position: fixed;
+  bottom: 24px;
+  right: 12px;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.s365-basemap-picker {
+  position: relative;
+}
+
+.s365-basemap-menu {
+  position: absolute;
+  bottom: 56px;
+  right: 0;
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: var(--s365-panel-radius);
+  padding: 8px;
+  box-shadow: var(--s365-panel-shadow);
+  min-width: 160px;
+}
+
+.s365-basemap-menu label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  color: #1e293b;
+  min-height: var(--s365-touch-min);
+  transition: background 0.15s;
+  margin: 0;
+}
+
+.s365-basemap-menu label:hover {
+  background: #f1f5f9;
+}
+
+.s365-basemap-menu label input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--s365-blue);
+}
+
+/* --- Bottom Sheet Overlay (mode panel, site list, forms) --- */
+.s365-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 24;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.s365-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 75vh;
+  z-index: 25;
+  background: #ffffff;
+  border-radius: 20px 20px 0 0;
+  padding: 12px 16px 24px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.3);
+}
+
+.s365-sheet-handle {
+  width: 40px;
+  height: 5px;
+  background: #cbd5e1;
+  border-radius: 3px;
+  margin: 0 auto 12px;
+}
+
+.s365-sheet h3 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 16px 0;
+}
+
+/* --- Site List Items --- */
+.s365-site-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  min-height: var(--s365-touch-min);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.s365-site-item:hover,
+.s365-site-item:active {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.s365-site-item.nearest {
+  border-color: var(--s365-blue);
+  background: #eff6ff;
+}
+
+.s365-site-item .site-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.s365-site-item .site-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s365-site-item .site-detail {
+  font-size: 13px;
+  color: #64748b;
+  display: block;
+  margin-top: 2px;
+}
+
+.s365-site-item .site-distance {
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.s365-site-item .site-source-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.s365-site-item .site-source-badge.manual { background: #dbeafe; color: #1d4ed8; }
+.s365-site-item .site-source-badge.cors_rtk { background: #dcfce7; color: #15803d; }
+.s365-site-item .site-source-badge.opus { background: #f3e8ff; color: #7c3aed; }
+.s365-site-item .site-source-badge.averaged { background: #fff7ed; color: #c2410c; }
+.s365-site-item .site-source-badge.imported { background: #e0f2fe; color: #0369a1; }
+
+/* --- Establish Progress --- */
+.s365-establish-panel {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.s365-establish-panel progress {
+  width: 100%;
+  height: 12px;
+  border-radius: 6px;
+  margin: 16px 0;
+}
+
+.s365-establish-panel progress::-webkit-progress-bar {
+  background: #e2e8f0;
+  border-radius: 6px;
+}
+
+.s365-establish-panel progress::-webkit-progress-value {
+  background: var(--s365-yellow);
+  border-radius: 6px;
+  transition: width 0.5s ease;
+}
+
+.s365-establish-panel .establish-status {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 4px;
+}
+
+.s365-establish-panel .establish-detail {
+  font-size: 14px;
+  color: #64748b;
+}
+
+/* --- Confirm Dialog --- */
+.s365-confirm {
+  text-align: center;
+  padding: 8px 0;
+}
+
+.s365-confirm .confirm-site-name {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 8px 0;
+}
+
+.s365-confirm .confirm-coords {
+  font-size: 14px;
+  color: #64748b;
+  font-family: "SF Mono", "Fira Code", monospace;
+  margin-bottom: 20px;
+}
+
+.s365-confirm .confirm-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.s365-confirm .confirm-actions button {
+  flex: 1;
+  min-height: var(--s365-touch-min);
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  padding: 12px;
+  transition: opacity 0.15s;
+}
+
+.s365-confirm .confirm-actions button:active {
+  opacity: 0.8;
+}
+
+.s365-confirm .btn-primary {
+  background: var(--s365-green);
+  color: #ffffff;
+}
+
+.s365-confirm .btn-secondary {
+  background: #e2e8f0;
+  color: #475569;
+}
+
+.s365-confirm .btn-danger {
+  background: var(--s365-red);
+  color: #ffffff;
+}
+
+/* --- Generic action buttons for the sheet --- */
+.s365-sheet .s365-action-btn {
+  display: block;
+  width: 100%;
+  min-height: var(--s365-touch-min);
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #1e293b;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: background 0.15s;
+}
+
+.s365-sheet .s365-action-btn:hover,
+.s365-sheet .s365-action-btn:active {
+  background: #e2e8f0;
+}
+
+.s365-sheet .s365-action-btn.primary {
+  background: var(--s365-blue);
+  color: #ffffff;
+  border-color: var(--s365-blue);
+}
+
+.s365-sheet .s365-action-btn.stop {
+  background: var(--s365-red);
+  color: #ffffff;
+  border-color: var(--s365-red);
+}
+
+/* --- MapLibre Popup Override --- */
+.maplibregl-popup-content {
+  padding: 14px 18px;
+  font-size: 14px;
+  max-width: 300px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.maplibregl-popup-content h4 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.maplibregl-popup-content table {
+  width: 100%;
+  margin: 0;
+  font-size: 13px;
+}
+
+.maplibregl-popup-content table td {
+  padding: 3px 6px;
+  border: none;
+  vertical-align: top;
+}
+
+.maplibregl-popup-content table td:first-child {
+  font-weight: 600;
+  white-space: nowrap;
+  color: #64748b;
+  width: 80px;
+}
+
+.maplibregl-popup-content .popup-start-btn {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--s365-green);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: opacity 0.15s;
+}
+
+.maplibregl-popup-content .popup-start-btn:active {
+  opacity: 0.8;
+}
+
+/* --- Toast Notifications --- */
+.s365-toast-container {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.s365-toast {
+  padding: 12px 20px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  animation: s365-toast-in 0.3s ease;
+  pointer-events: auto;
+  text-align: center;
+  max-width: 90vw;
+}
+
+.s365-toast.success {
+  background: var(--s365-green);
+  color: #ffffff;
+}
+
+.s365-toast.error {
+  background: var(--s365-red);
+  color: #ffffff;
+}
+
+.s365-toast.warning {
+  background: var(--s365-yellow);
+  color: #1e293b;
+}
+
+.s365-toast.info {
+  background: var(--s365-blue);
+  color: #ffffff;
+}
+
+@keyframes s365-toast-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Login Page Styles --- */
+.s365-login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  background: #0f172a;
+  padding: 16px;
+}
+
+.s365-login-card {
+  width: 100%;
+  max-width: 400px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 32px 24px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+
+.s365-login-card h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 8px 0;
+  text-align: center;
+}
+
+.s365-login-card .subtitle {
+  text-align: center;
+  color: #64748b;
+  font-size: 14px;
+  margin-bottom: 24px;
+}
+
+.s365-login-card input[type="password"] {
+  width: 100%;
+  height: var(--s365-touch-min);
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0 16px;
+  font-size: 16px;
+  margin-bottom: 16px;
+  color: #1e293b;
+}
+
+.s365-login-card input[type="password"]:focus {
+  border-color: var(--s365-blue);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.s365-login-card button[type="submit"] {
+  width: 100%;
+  min-height: var(--s365-touch-min);
+  border: none;
+  border-radius: 10px;
+  background: var(--s365-blue);
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.s365-login-card button[type="submit"]:active {
+  opacity: 0.8;
+}
+
+.s365-login-card .login-error {
+  color: var(--s365-red);
+  font-size: 14px;
+  text-align: center;
+  margin-top: 12px;
+}
+
+.s365-login-card .login-back {
+  display: block;
+  text-align: center;
+  margin-top: 16px;
+  color: #64748b;
+  font-size: 14px;
+  text-decoration: none;
+}
+
+.s365-login-card .login-back:hover {
+  color: var(--s365-blue);
+}
+
+/* --- Admin Page Styles --- */
+.s365-admin-page {
+  min-height: 100vh;
+  background: #f8fafc;
+}
+
+.s365-admin-header {
+  background: #0f172a;
+  color: #ffffff;
+  padding: 16px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.s365-admin-header a {
+  color: #94a3b8;
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.s365-admin-header a:hover {
+  color: #ffffff;
+}
+
+.s365-admin-header h1 {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  flex: 1;
+}
+
+.s365-admin-content {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px 16px;
+}
+
+.s365-admin-section {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.s365-admin-section h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 16px 0;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.s365-admin-section table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.s365-admin-section table th,
+.s365-admin-section table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 14px;
+}
+
+.s365-admin-section table th {
+  font-weight: 600;
+  color: #64748b;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.s365-admin-section .admin-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.s365-admin-section .admin-actions button {
+  padding: 6px 12px;
+  min-height: 36px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.s365-admin-section .admin-actions button:hover {
+  background: #e2e8f0;
+}
+
+.s365-admin-section .admin-actions button.delete {
+  color: var(--s365-red);
+  border-color: #fecaca;
+}
+
+.s365-admin-form label {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 4px;
+}
+
+.s365-admin-form input,
+.s365-admin-form select {
+  width: 100%;
+  height: 44px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 15px;
+  margin-bottom: 12px;
+  color: #1e293b;
+}
+
+.s365-admin-form input:focus,
+.s365-admin-form select:focus {
+  border-color: var(--s365-blue);
+  outline: none;
+}
+
+.s365-admin-form button {
+  min-height: 44px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.s365-admin-form button[type="submit"] {
+  background: var(--s365-blue);
+  color: #ffffff;
+}
+
+.s365-admin-form button.secondary {
+  background: #e2e8f0;
+  color: #475569;
+  margin-left: 8px;
+}
+
+/* --- Empty state --- */
+.s365-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: #94a3b8;
+}
+
+.s365-empty p {
+  font-size: 15px;
+}
+
+/* --- MapLibre Control Overrides --- */
+.maplibregl-ctrl-group {
+  box-shadow: var(--s365-panel-shadow) !important;
+  border-radius: 10px !important;
+}
+
+.maplibregl-ctrl-group button {
+  width: 44px !important;
+  height: 44px !important;
+}
+
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl-scale {
+  margin-bottom: 90px;
+  margin-left: 8px;
+}
+
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group {
+  margin-bottom: 90px;
+}
+
+/* GeolocateControl blue dot */
+.maplibregl-user-location-dot {
+  width: 16px;
+  height: 16px;
+}
+
+/* --- WebSocket Connection Indicator --- */
+.s365-ws-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-left: 4px;
+  vertical-align: middle;
+}
+
+.s365-ws-indicator.connected { background: var(--s365-green); }
+.s365-ws-indicator.disconnected { background: var(--s365-red); }
+
+/* --- Mobile Breakpoints --- */
+@media (max-width: 480px) {
+  .s365-top-bar .s365-search-wrap {
+    max-width: none;
+    flex: 1;
+  }
+
+  .s365-status-strip {
+    left: 8px;
+    bottom: 16px;
+    right: 72px;
+    max-width: none;
+    padding: 8px 12px;
+  }
+
+  .s365-stats {
+    font-size: 12px;
+    gap: 8px;
+  }
+
+  .s365-mode-indicator {
+    font-size: 14px;
+  }
+
+  .s365-bottom-right {
+    bottom: 16px;
+    right: 8px;
+  }
+
+  .s365-sheet {
+    max-height: 85vh;
+    padding: 12px 12px 20px;
+  }
+
+  .s365-menu {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 360px) {
+  .s365-stats {
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+
+/* --- Utility --- */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

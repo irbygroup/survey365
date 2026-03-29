@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Survey365 - Admin</title>
+
+  <!-- Pico.css -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <!-- Survey365 custom styles -->
+  <link rel="stylesheet" href="/css/survey365.css">
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+</head>
+<body class="s365-admin-page" x-data="adminPanel()" x-init="init()" x-cloak>
+
+  <!-- Header -->
+  <div class="s365-admin-header">
+    <a href="/" title="Back to map">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </a>
+    <h1>Survey365 Admin</h1>
+    <a href="/" style="margin-left:auto;">Map</a>
+  </div>
+
+  <!-- Auth check overlay -->
+  <template x-if="!authenticated && authChecked">
+    <div style="text-align:center; padding:60px 20px;">
+      <h2 style="color:#0f172a;">Authentication Required</h2>
+      <p style="color:#64748b;">You need to log in to access admin settings.</p>
+      <a href="/login.html?next=/admin.html"
+         style="display:inline-block; padding:14px 28px; background:var(--s365-blue); color:#fff; border-radius:10px; text-decoration:none; font-weight:700; font-size:16px;">
+        Log In
+      </a>
+    </div>
+  </template>
+
+  <!-- Loading -->
+  <div x-show="!authChecked" style="text-align:center; padding:60px 20px;">
+    <p aria-busy="true" style="color:#64748b;">Loading...</p>
+  </div>
+
+  <!-- Admin Content -->
+  <template x-if="authenticated && authChecked">
+    <div class="s365-admin-content">
+
+      <!-- ===== Sites Management ===== -->
+      <div class="s365-admin-section">
+        <h2>Saved Points</h2>
+
+        <div x-show="sitesLoading" style="text-align:center; padding:20px;">
+          <p aria-busy="true">Loading points...</p>
+        </div>
+
+        <div x-show="!sitesLoading && sites.length === 0" class="s365-empty">
+          <p>No saved points yet.</p>
+        </div>
+
+        <table x-show="!sitesLoading && sites.length > 0">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Coordinates</th>
+              <th>Source</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="site in sites" :key="site.id">
+              <tr>
+                <td>
+                  <strong x-text="site.name"></strong>
+                  <br>
+                  <small x-text="site.notes || ''" style="color:#64748b;"></small>
+                </td>
+                <td style="font-family: monospace; font-size: 13px;">
+                  <span x-text="parseFloat(site.lat).toFixed(8)"></span>,
+                  <span x-text="parseFloat(site.lon).toFixed(8)"></span>
+                  <template x-if="site.height">
+                    <span x-text="' @ ' + parseFloat(site.height).toFixed(3) + 'm'"></span>
+                  </template>
+                </td>
+                <td><span class="site-source-badge" :class="site.source || ''" x-text="site.source || '--'"></span></td>
+                <td>
+                  <div class="admin-actions">
+                    <button @click="editSite(site)">Edit</button>
+                    <button class="delete" @click="deleteSite(site)">Delete</button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <button @click="openAddSite()"
+                style="margin-top:12px; padding:10px 20px; background:var(--s365-blue); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;">
+          Add Point
+        </button>
+      </div>
+
+      <!-- ===== Add/Edit Site Form ===== -->
+      <template x-if="showSiteForm">
+        <div class="s365-admin-section">
+          <h2 x-text="editingSite ? 'Edit Point' : 'Add Point'"></h2>
+          <form @submit.prevent="saveSite()" class="s365-admin-form">
+            <label for="site-name">Name</label>
+            <input type="text" id="site-name" x-model="siteForm.name" required placeholder="e.g. Oak Street PK Nail">
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label for="site-lat">Latitude</label>
+                <input type="number" id="site-lat" x-model="siteForm.lat" step="any" required placeholder="30.694512">
+              </div>
+              <div>
+                <label for="site-lon">Longitude</label>
+                <input type="number" id="site-lon" x-model="siteForm.lon" step="any" required placeholder="-88.043281">
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label for="site-height">Ellipsoid Height (m)</label>
+                <input type="number" id="site-height" x-model="siteForm.height" step="any" placeholder="Optional">
+              </div>
+              <div>
+                <label for="site-source">Source</label>
+                <select id="site-source" x-model="siteForm.source">
+                  <option value="manual">Manual</option>
+                  <option value="cors_rtk">CORS RTK</option>
+                  <option value="opus">OPUS</option>
+                  <option value="averaged">Averaged</option>
+                  <option value="imported">Imported</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label for="site-acc-h">H Accuracy (m)</label>
+                <input type="number" id="site-acc-h" x-model="siteForm.accuracy_h" step="any" placeholder="Optional">
+              </div>
+              <div>
+                <label for="site-acc-v">V Accuracy (m)</label>
+                <input type="number" id="site-acc-v" x-model="siteForm.accuracy_v" step="any" placeholder="Optional">
+              </div>
+            </div>
+
+            <label for="site-notes">Notes</label>
+            <input type="text" id="site-notes" x-model="siteForm.notes" placeholder="Optional notes">
+
+            <div style="display:flex; gap:8px; margin-top:8px;">
+              <button type="submit" x-text="editingSite ? 'Update' : 'Add Point'"></button>
+              <button type="button" class="secondary" @click="closeSiteForm()">Cancel</button>
+            </div>
+          </form>
+          <p x-show="siteFormError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="siteFormError"></p>
+        </div>
+      </template>
+
+      <!-- ===== NTRIP Profiles ===== -->
+      <div class="s365-admin-section">
+        <h2>NTRIP Profiles</h2>
+        <p style="color:#64748b; font-size:14px;">
+          NTRIP profiles are managed through RTKBase settings.
+          Access the RTKBase web interface for NTRIP configuration.
+        </p>
+        <a href="/rtkbase"
+           target="_blank"
+           style="display:inline-block; padding:10px 20px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; text-decoration:none; color:#1e293b; font-weight:600; font-size:14px;">
+          Open RTKBase Settings
+        </a>
+      </div>
+
+      <!-- ===== Config Settings ===== -->
+      <div class="s365-admin-section">
+        <h2>Configuration</h2>
+        <form @submit.prevent="saveConfig()" class="s365-admin-form">
+          <label for="cfg-maptiler">MapTiler API Key</label>
+          <input type="text" id="cfg-maptiler" x-model="config.maptiler_key" placeholder="Your MapTiler key">
+
+          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+            <div>
+              <label for="cfg-lat">Default Latitude</label>
+              <input type="number" id="cfg-lat" x-model="config.default_lat" step="any">
+            </div>
+            <div>
+              <label for="cfg-lon">Default Longitude</label>
+              <input type="number" id="cfg-lon" x-model="config.default_lon" step="any">
+            </div>
+            <div>
+              <label for="cfg-zoom">Default Zoom</label>
+              <input type="number" id="cfg-zoom" x-model="config.default_zoom" min="3" max="22">
+            </div>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:8px; margin:12px 0;">
+            <input type="checkbox" x-model="config.auto_resume" style="width:auto; height:auto;">
+            Auto-resume last session on boot
+          </label>
+
+          <button type="submit">Save Configuration</button>
+        </form>
+        <p x-show="configSaved" style="color:var(--s365-green); margin-top:8px; font-size:14px;">Configuration saved.</p>
+        <p x-show="configError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="configError"></p>
+      </div>
+
+      <!-- ===== Change Password ===== -->
+      <div class="s365-admin-section">
+        <h2>Change Password</h2>
+        <form @submit.prevent="changePassword()" class="s365-admin-form">
+          <label for="pw-current">Current Password</label>
+          <input type="password" id="pw-current" x-model="pwForm.current" autocomplete="current-password">
+
+          <label for="pw-new">New Password</label>
+          <input type="password" id="pw-new" x-model="pwForm.new_password" autocomplete="new-password" minlength="4">
+
+          <label for="pw-confirm">Confirm New Password</label>
+          <input type="password" id="pw-confirm" x-model="pwForm.confirm" autocomplete="new-password">
+
+          <button type="submit">Change Password</button>
+        </form>
+        <p x-show="pwSuccess" style="color:var(--s365-green); margin-top:8px; font-size:14px;">Password changed.</p>
+        <p x-show="pwError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="pwError"></p>
+      </div>
+
+    </div>
+  </template>
+
+  <script>
+    function adminPanel() {
+      return {
+        /* Auth */
+        authenticated: false,
+        authChecked: false,
+
+        /* Sites */
+        sites: [],
+        sitesLoading: false,
+        showSiteForm: false,
+        editingSite: null,
+        siteForm: { name: '', lat: '', lon: '', height: '', source: 'manual', accuracy_h: '', accuracy_v: '', notes: '' },
+        siteFormError: '',
+
+        /* Config */
+        config: { maptiler_key: '', default_lat: 30.69, default_lon: -88.05, default_zoom: 12, auto_resume: false },
+        configSaved: false,
+        configError: '',
+
+        /* Password */
+        pwForm: { current: '', new_password: '', confirm: '' },
+        pwSuccess: false,
+        pwError: '',
+
+        async init() {
+          await this._checkAuth();
+          if (this.authenticated) {
+            this._loadSites();
+            this._loadConfig();
+          }
+        },
+
+        async _checkAuth() {
+          try {
+            var res = await fetch('/api/auth/check');
+            if (res.ok) {
+              var data = await res.json();
+              this.authenticated = data.authenticated || false;
+            }
+          } catch (_) {
+            this.authenticated = false;
+          }
+          this.authChecked = true;
+        },
+
+        /* ======= Sites CRUD ======= */
+
+        async _loadSites() {
+          this.sitesLoading = true;
+          try {
+            var res = await fetch('/api/sites?limit=500');
+            if (res.ok) {
+              var data = await res.json();
+              this.sites = data.sites || [];
+            }
+          } catch (_) {}
+          this.sitesLoading = false;
+        },
+
+        openAddSite() {
+          this.editingSite = null;
+          this.siteForm = { name: '', lat: '', lon: '', height: '', source: 'manual', accuracy_h: '', accuracy_v: '', notes: '' };
+          this.siteFormError = '';
+          this.showSiteForm = true;
+        },
+
+        editSite(site) {
+          this.editingSite = site;
+          this.siteForm = {
+            name: site.name || '',
+            lat: site.lat || '',
+            lon: site.lon || '',
+            height: site.height || '',
+            source: site.source || 'manual',
+            accuracy_h: site.accuracy_h || '',
+            accuracy_v: site.accuracy_v || '',
+            notes: site.notes || ''
+          };
+          this.siteFormError = '';
+          this.showSiteForm = true;
+        },
+
+        closeSiteForm() {
+          this.showSiteForm = false;
+          this.editingSite = null;
+          this.siteFormError = '';
+        },
+
+        async saveSite() {
+          this.siteFormError = '';
+
+          if (!this.siteForm.name || !this.siteForm.lat || !this.siteForm.lon) {
+            this.siteFormError = 'Name, latitude, and longitude are required.';
+            return;
+          }
+
+          var body = {
+            name: this.siteForm.name.trim(),
+            lat: parseFloat(this.siteForm.lat),
+            lon: parseFloat(this.siteForm.lon)
+          };
+
+          if (this.siteForm.height !== '' && this.siteForm.height != null) {
+            body.height = parseFloat(this.siteForm.height);
+          }
+          if (this.siteForm.source) body.source = this.siteForm.source;
+          if (this.siteForm.accuracy_h !== '' && this.siteForm.accuracy_h != null) {
+            body.accuracy_h = parseFloat(this.siteForm.accuracy_h);
+          }
+          if (this.siteForm.accuracy_v !== '' && this.siteForm.accuracy_v != null) {
+            body.accuracy_v = parseFloat(this.siteForm.accuracy_v);
+          }
+          if (this.siteForm.notes) body.notes = this.siteForm.notes.trim();
+
+          try {
+            var url, method;
+            if (this.editingSite) {
+              url = '/api/sites/' + this.editingSite.id;
+              method = 'PUT';
+            } else {
+              url = '/api/sites';
+              method = 'POST';
+            }
+
+            var res = await fetch(url, {
+              method: method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+
+            if (res.ok) {
+              this.closeSiteForm();
+              await this._loadSites();
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              this.siteFormError = err.error || err.detail || 'Failed to save point.';
+            }
+          } catch (err) {
+            this.siteFormError = 'Network error: ' + err.message;
+          }
+        },
+
+        async deleteSite(site) {
+          if (!confirm('Delete "' + site.name + '"? This cannot be undone.')) return;
+
+          try {
+            var res = await fetch('/api/sites/' + site.id, { method: 'DELETE' });
+            if (res.ok) {
+              await this._loadSites();
+            } else {
+              alert('Failed to delete point.');
+            }
+          } catch (err) {
+            alert('Network error: ' + err.message);
+          }
+        },
+
+        /* ======= Config ======= */
+
+        async _loadConfig() {
+          try {
+            var res = await fetch('/api/config');
+            if (res.ok) {
+              var data = await res.json();
+              this.config.maptiler_key = data.maptiler_key || '';
+              this.config.default_lat = data.default_lat || 30.69;
+              this.config.default_lon = data.default_lon || -88.05;
+              this.config.default_zoom = data.default_zoom || 12;
+              this.config.auto_resume = data.auto_resume === true || data.auto_resume === 'true';
+            }
+          } catch (_) {}
+        },
+
+        async saveConfig() {
+          this.configSaved = false;
+          this.configError = '';
+
+          try {
+            var res = await fetch('/api/config', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                maptiler_key: this.config.maptiler_key,
+                default_lat: String(this.config.default_lat),
+                default_lon: String(this.config.default_lon),
+                default_zoom: String(this.config.default_zoom),
+                auto_resume: this.config.auto_resume ? 'true' : 'false'
+              })
+            });
+
+            if (res.ok) {
+              this.configSaved = true;
+              var self = this;
+              setTimeout(function () { self.configSaved = false; }, 3000);
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              this.configError = err.error || 'Failed to save.';
+            }
+          } catch (err) {
+            this.configError = 'Network error: ' + err.message;
+          }
+        },
+
+        /* ======= Password Change ======= */
+
+        async changePassword() {
+          this.pwSuccess = false;
+          this.pwError = '';
+
+          if (!this.pwForm.new_password) {
+            this.pwError = 'New password is required.';
+            return;
+          }
+          if (this.pwForm.new_password.length < 4) {
+            this.pwError = 'Password must be at least 4 characters.';
+            return;
+          }
+          if (this.pwForm.new_password !== this.pwForm.confirm) {
+            this.pwError = 'Passwords do not match.';
+            return;
+          }
+
+          try {
+            var res = await fetch('/api/auth/password', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                current: this.pwForm.current || null,
+                new_password: this.pwForm.new_password
+              })
+            });
+
+            if (res.ok) {
+              this.pwSuccess = true;
+              this.pwForm = { current: '', new_password: '', confirm: '' };
+              var self = this;
+              setTimeout(function () { self.pwSuccess = false; }, 3000);
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              this.pwError = err.error || 'Failed to change password.';
+            }
+          } catch (err) {
+            this.pwError = 'Network error: ' + err.message;
+          }
+        }
+      };
+    }
+  </script>
+</body>
+</html>

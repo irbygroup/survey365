@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0f172a">
+  <title>Survey365</title>
+
+  <!-- Pico.css (classless base) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <!-- MapLibre GL CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <!-- Survey365 custom styles -->
+  <link rel="stylesheet" href="/css/survey365.css">
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+</head>
+<body x-data="survey365App()" x-init="init()" x-cloak>
+
+  <!-- ============================================================
+       Full-screen Map Container
+       ============================================================ -->
+  <div id="map"></div>
+
+  <!-- ============================================================
+       Top Bar: Search + Layers + Menu
+       ============================================================ -->
+  <div class="s365-top-bar">
+    <!-- Search input -->
+    <div class="s365-search-wrap">
+      <input type="text"
+             placeholder="Search points..."
+             aria-label="Search saved points"
+             @keydown.enter="openModePanel()"
+             @focus="openModePanel()">
+    </div>
+
+    <!-- Top-right controls -->
+    <div class="s365-top-right">
+      <!-- Lock/Auth indicator -->
+      <button class="s365-icon-btn"
+              x-show="!authenticated"
+              @click="showLogin = true"
+              aria-label="Admin login"
+              title="Admin login">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </button>
+
+      <!-- Hamburger menu -->
+      <button class="s365-icon-btn"
+              @click="menuOpen = !menuOpen"
+              aria-label="Open menu"
+              title="Menu">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Hamburger Menu (slide from right)
+       ============================================================ -->
+  <template x-if="menuOpen">
+    <div>
+      <div class="s365-menu-backdrop" @click="menuOpen = false"></div>
+      <div class="s365-menu" x-transition:enter="transition ease-out duration-200"
+           x-transition:enter-start="transform translate-x-full"
+           x-transition:enter-end="transform translate-x-0"
+           x-transition:leave="transition ease-in duration-150"
+           x-transition:leave-start="transform translate-x-0"
+           x-transition:leave-end="transform translate-x-full">
+        <button class="s365-menu-close" @click="menuOpen = false" aria-label="Close menu">&times;</button>
+
+        <h4>Mode</h4>
+        <button @click="openModePanel(); menuOpen = false">Known Point Base</button>
+        <button @click="startRelativeBase(); menuOpen = false">Relative Base (Quick)</button>
+        <button @click="resumeMode(); menuOpen = false">Resume Last</button>
+        <button class="danger" @click="stopMode(); menuOpen = false" x-show="mode !== 'idle'">Stop Broadcasting</button>
+
+        <hr>
+        <h4>Map</h4>
+        <button @click="centerOnBase(); menuOpen = false">Center on Base</button>
+
+        <hr>
+        <h4>Account</h4>
+        <button @click="showLogin = true; menuOpen = false" x-show="!authenticated">Admin Login</button>
+        <template x-if="authenticated">
+          <div>
+            <button @click="window.location.href = '/admin.html'">Settings</button>
+            <button @click="doLogout(); menuOpen = false">Log Out</button>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============================================================
+       Bottom-left Status Strip
+       ============================================================ -->
+  <div class="s365-status-strip">
+    <div class="s365-mode-indicator" :class="modeColor">
+      <span class="s365-mode-dot"></span>
+      <span x-text="modeLabel"></span>
+      <span class="s365-ws-indicator" :class="wsConnected ? 'connected' : 'disconnected'"
+            :title="wsConnected ? 'Live connected' : 'Disconnected'"></span>
+    </div>
+    <div class="s365-stats">
+      <span>SVs: <strong x-text="gnss.satellites_used"></strong></span>
+      <span>Fix: <strong x-text="gnss.fix_type"></strong></span>
+      <span x-show="gnss.accuracy_h > 0">
+        Acc: <strong x-text="gnss.accuracy_h < 1 ? (gnss.accuracy_h * 1000).toFixed(0) + 'mm' : gnss.accuracy_h.toFixed(3) + 'm'"></strong>
+      </span>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Bottom-right Controls: Basemap Picker + Center on Base
+       ============================================================ -->
+  <div class="s365-bottom-right">
+    <!-- Center on Base -->
+    <button class="s365-icon-btn"
+            @click="centerOnBase()"
+            aria-label="Center on base"
+            title="Center on base station">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>
+    </button>
+
+    <!-- Basemap Picker -->
+    <div class="s365-basemap-picker">
+      <button class="s365-icon-btn"
+              @click="basemapMenuOpen = !basemapMenuOpen"
+              aria-label="Change basemap"
+              title="Basemap">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+      </button>
+
+      <div class="s365-basemap-menu"
+           x-show="basemapMenuOpen"
+           x-transition
+           @click.outside="basemapMenuOpen = false">
+        <label>
+          <input type="radio" name="basemap" value="street" x-model="basemap" @change="switchBasemap()">
+          Street
+        </label>
+        <label>
+          <input type="radio" name="basemap" value="satellite" x-model="basemap" @change="switchBasemap()">
+          Satellite
+        </label>
+        <label>
+          <input type="radio" name="basemap" value="topo" x-model="basemap" @change="switchBasemap()">
+          Topo
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Mode Panel -- Bottom Sheet
+       ============================================================ -->
+  <template x-if="showModePanel">
+    <div>
+      <div class="s365-sheet-backdrop" @click="showModePanel = false; confirmSite = null; modePanelView = 'main'"></div>
+      <div class="s365-sheet" x-transition:enter="transition ease-out duration-250"
+           x-transition:enter-start="transform translate-y-full"
+           x-transition:enter-end="transform translate-y-0"
+           x-transition:leave="transition ease-in duration-200"
+           x-transition:leave-start="transform translate-y-0"
+           x-transition:leave-end="transform translate-y-full">
+        <div class="s365-sheet-handle"></div>
+
+        <!-- Site Selection View -->
+        <template x-if="modePanelView === 'site_select'">
+          <div>
+            <h3>Select Base Point</h3>
+
+            <!-- Loading state -->
+            <div x-show="sitesLoading" class="s365-empty">
+              <p aria-busy="true">Loading saved points...</p>
+            </div>
+
+            <!-- Empty state -->
+            <div x-show="!sitesLoading && sites.length === 0" class="s365-empty">
+              <p>No saved points yet.</p>
+              <p>Add points from the Settings page or save one after using Relative Base.</p>
+            </div>
+
+            <!-- Site list -->
+            <div x-show="!sitesLoading && sites.length > 0">
+              <template x-for="(site, idx) in sites" :key="site.id">
+                <div class="s365-site-item"
+                     :class="{ nearest: idx === 0 && site.distance_m != null }"
+                     @click="selectSite(site)">
+                  <div class="site-info">
+                    <span class="site-name" x-text="site.name"></span>
+                    <span class="site-detail">
+                      <span class="site-source-badge" :class="site.source || ''"
+                            x-text="site.source || 'unknown'"></span>
+                      <span x-show="site.accuracy_h" x-text="' &plusmn;' + parseFloat(site.accuracy_h || 0).toFixed(3) + 'm'"></span>
+                    </span>
+                  </div>
+                  <span class="site-distance" x-text="formatDistance(site.distance_m)"></span>
+                </div>
+              </template>
+            </div>
+
+            <button class="s365-action-btn" @click="showModePanel = false; modePanelView = 'main'">Cancel</button>
+          </div>
+        </template>
+
+        <!-- Confirm Known Base View -->
+        <template x-if="modePanelView === 'confirm' && confirmSite">
+          <div class="s365-confirm">
+            <h3>Start Base Here?</h3>
+            <div class="confirm-site-name" x-text="confirmSite.name"></div>
+            <div class="confirm-coords">
+              <span x-text="parseFloat(confirmSite.lat).toFixed(8)"></span>,
+              <span x-text="parseFloat(confirmSite.lon).toFixed(8)"></span>
+              <template x-if="confirmSite.height">
+                <span x-text="' @ ' + parseFloat(confirmSite.height).toFixed(3) + 'm'"></span>
+              </template>
+            </div>
+            <div class="confirm-actions">
+              <button class="btn-secondary" @click="cancelConfirm()">Back</button>
+              <button class="btn-primary" @click="confirmKnownBase()">Start Base</button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============================================================
+       Establish Progress Panel -- Bottom Sheet
+       ============================================================ -->
+  <template x-if="showEstablishPanel">
+    <div>
+      <div class="s365-sheet-backdrop" @click="/* Don't close during establish */"></div>
+      <div class="s365-sheet">
+        <div class="s365-sheet-handle"></div>
+        <div class="s365-establish-panel">
+          <h3>Establishing Position</h3>
+          <div class="establish-status">
+            Averaging... <span x-text="establishElapsed"></span>s / <span x-text="establishTotal"></span>s
+          </div>
+          <progress :value="establishPercent" max="100"></progress>
+          <div class="establish-detail">
+            <span x-text="establishSamples"></span> samples collected
+            <template x-if="gnss.accuracy_h > 0">
+              <span> &middot; Accuracy: <span x-text="gnss.accuracy_h.toFixed(3)"></span>m</span>
+            </template>
+          </div>
+          <button class="s365-action-btn stop" @click="stopMode()" style="margin-top: 20px;">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============================================================
+       Login Dialog
+       ============================================================ -->
+  <template x-if="showLogin">
+    <div>
+      <div class="s365-sheet-backdrop" @click="showLogin = false; loginError = ''; loginPassword = ''"></div>
+      <div class="s365-sheet" style="max-height: 50vh;">
+        <div class="s365-sheet-handle"></div>
+        <h3>Admin Login</h3>
+        <form @submit.prevent="doLogin()" class="s365-admin-form">
+          <label for="login-pw">Password</label>
+          <input type="password" id="login-pw" x-model="loginPassword" placeholder="Enter admin password" autofocus>
+          <button type="submit" style="width:100; min-height:48px; border:none; border-radius:10px; background:var(--s365-blue); color:#fff; font-size:16px; font-weight:700; cursor:pointer; width:100%;">Log In</button>
+        </form>
+        <p x-show="loginError" style="color: var(--s365-red); text-align: center; margin-top: 12px; font-size: 14px;" x-text="loginError"></p>
+        <button class="s365-action-btn" @click="showLogin = false; loginError = ''; loginPassword = '';" style="margin-top: 12px;">Cancel</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============================================================
+       Toast Container
+       ============================================================ -->
+  <div class="s365-toast-container">
+    <template x-for="toast in toasts" :key="toast.id">
+      <div class="s365-toast" :class="toast.type" x-text="toast.message"></div>
+    </template>
+  </div>
+
+  <!-- ============================================================
+       Scripts
+       ============================================================ -->
+  <!-- MapLibre GL JS -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <!-- Survey365 modules -->
+  <script src="/js/map-core.js"></script>
+  <script src="/js/map-sites.js"></script>
+  <script src="/js/status.js"></script>
+  <script src="/js/mode-panel.js"></script>
+</body>
+</html>
