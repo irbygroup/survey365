@@ -52,6 +52,18 @@
       <div class="s365-admin-section">
         <h2>Saved Points</h2>
 
+        <!-- Project filter -->
+        <div style="margin-bottom:16px; display:flex; align-items:center; gap:8px;">
+          <label for="project-filter" style="font-size:14px; font-weight:600; color:#374151; white-space:nowrap; margin:0;">Project:</label>
+          <select id="project-filter" x-model="filterProjectId" @change="_loadSites()"
+                  style="height:40px; border:2px solid #e2e8f0; border-radius:8px; padding:0 10px; font-size:14px; color:#1e293b; flex:1; max-width:300px;">
+            <option value="all">All Projects</option>
+            <template x-for="p in projects" :key="p.id">
+              <option :value="p.id" x-text="p.name"></option>
+            </template>
+          </select>
+        </div>
+
         <div x-show="sitesLoading" style="text-align:center; padding:20px;">
           <p aria-busy="true">Loading points...</p>
         </div>
@@ -237,6 +249,10 @@
         authenticated: false,
         authChecked: false,
 
+        /* Projects */
+        projects: [],
+        filterProjectId: 'active',
+
         /* Sites */
         sites: [],
         sitesLoading: false,
@@ -258,9 +274,24 @@
         async init() {
           await this._checkAuth();
           if (this.authenticated) {
+            await this._loadProjects();
             this._loadSites();
             this._loadConfig();
           }
+        },
+
+        async _loadProjects() {
+          try {
+            var res = await fetch('/api/projects');
+            if (res.ok) {
+              var data = await res.json();
+              this.projects = data.projects || [];
+              /* Default filter to active project */
+              if (data.active_project_id) {
+                this.filterProjectId = String(data.active_project_id);
+              }
+            }
+          } catch (_) {}
         },
 
         async _checkAuth() {
@@ -281,7 +312,13 @@
         async _loadSites() {
           this.sitesLoading = true;
           try {
-            var res = await fetch('/api/sites?limit=500');
+            var url = '/api/sites?limit=500';
+            if (this.filterProjectId === 'all') {
+              url += '&all_projects=true';
+            } else if (this.filterProjectId && this.filterProjectId !== 'active') {
+              url += '&project_id=' + this.filterProjectId;
+            }
+            var res = await fetch(url);
             if (res.ok) {
               var data = await res.json();
               this.sites = data.sites || [];

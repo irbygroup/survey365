@@ -4,6 +4,9 @@ Sites CRUD routes: saved survey points with SpatiaLite proximity queries.
 All sites have lat/lon/height coordinates and optional SpatiaLite geometry
 for spatial distance calculations. If SpatiaLite is not available, proximity
 sorting falls back to a Haversine approximation in SQL.
+
+Sites are scoped to the active project. The `all_projects` query param
+bypasses project filtering (useful for admin views).
 """
 
 import math
@@ -12,7 +15,7 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from ..db import get_db
+from ..db import get_active_project_id, get_db
 
 router = APIRouter(prefix="/api/sites", tags=["sites"])
 
@@ -64,6 +67,7 @@ def _row_to_dict(row, distance_m: float | None = None) -> dict:
         "established": row["established"],
         "last_used": row["last_used"],
         "notes": row["notes"],
+        "project_id": row["project_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -77,56 +81,65 @@ async def list_sites(
     near_lat: float | None = Query(default=None, ge=-90, le=90),
     near_lon: float | None = Query(default=None, ge=-180, le=180),
     search: str | None = Query(default=None, max_length=200),
+    project_id: int | None = Query(default=None),
+    all_projects: bool = Query(default=False),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ):
-    """List sites with optional proximity sort and text search.
+    """List sites with optional proximity sort, text search, and project filter.
 
     If near_lat and near_lon are provided, results are sorted by distance
     and include a distance_m field. Uses SpatiaLite ST_Distance when available,
     otherwise falls back to Haversine approximation.
+
+    Project filtering: uses active project by default. Pass project_id to
+    override, or all_projects=true to see everything.
     """
+    # Determine project filter
+    filter_pid = None
+    if not all_projects:
+        filter_pid = project_id if project_id is not None else await get_active_project_id()
+
     async with get_db() as db:
         has_proximity = near_lat is not None and near_lon is not None
+
+        # Build WHERE clause
+        conditions: list[str] = []
+        cond_params: list = []
+        if filter_pid is not None:
+            conditions.append("project_id = ?")
+            cond_params.append(filter_pid)
+        if search:
+            conditions.append("(name LIKE ? OR notes LIKE ?)")
+            cond_params.extend([f"%{search}%", f"%{search}%"])
+
+        where_sql = (" WHERE " + " AND ".join(conditions)) if conditions else ""
+
+        # Count query (shared across all branches)
+        count_cursor = await db.execute(
+            f"SELECT COUNT(*) as cnt FROM sites{where_sql}",
+            cond_params,
+        )
+        count_row = await count_cursor.fetchone()
+        total = count_row["cnt"]
 
         if has_proximity:
             # Try SpatiaLite distance first
             try:
-                query = """
+                query = f"""
                     SELECT *, ST_Distance(geom, MakePoint(?, ?, 4326), 1) as distance_m
-                    FROM sites
+                    FROM sites{where_sql}
+                    ORDER BY distance_m ASC LIMIT ? OFFSET ?
                 """
-                params: list = [near_lon, near_lat]
-
-                if search:
-                    query += " WHERE (name LIKE ? OR notes LIKE ?)"
-                    params.extend([f"%{search}%", f"%{search}%"])
-
-                query += " ORDER BY distance_m ASC LIMIT ? OFFSET ?"
-                params.extend([limit, offset])
-
+                params = [near_lon, near_lat] + cond_params + [limit, offset]
                 cursor = await db.execute(query, params)
                 rows = await cursor.fetchall()
-
-                # Get total count
-                count_query = "SELECT COUNT(*) as cnt FROM sites"
-                count_params: list = []
-                if search:
-                    count_query += " WHERE (name LIKE ? OR notes LIKE ?)"
-                    count_params = [f"%{search}%", f"%{search}%"]
-                count_cursor = await db.execute(count_query, count_params)
-                count_row = await count_cursor.fetchone()
-
                 sites = [_row_to_dict(r, distance_m=r["distance_m"]) for r in rows]
-                return {"sites": sites, "total": count_row["cnt"]}
-
+                return {"sites": sites, "total": total}
             except Exception:
-                # SpatiaLite not available, fall through to Haversine fallback
-                pass
+                pass  # SpatiaLite not available, fall through
 
-            # Haversine fallback: approximate distance using SQL math
-            # This uses the equirectangular approximation which is accurate enough
-            # for sorting at the distances we care about (< 100km)
+            # Haversine fallback: equirectangular approximation
             cos_lat = math.cos(math.radians(near_lat))
             query = f"""
                 SELECT *,
@@ -134,47 +147,27 @@ async def list_sites(
                         pow((lat - ?) * 1.0, 2) +
                         pow((lon - ?) * {cos_lat}, 2)
                     ) as distance_m
-                FROM sites
+                FROM sites{where_sql}
+                ORDER BY distance_m ASC LIMIT ? OFFSET ?
             """
-            params = [near_lat, near_lon]
-
-            if search:
-                query += " WHERE (name LIKE ? OR notes LIKE ?)"
-                params.extend([f"%{search}%", f"%{search}%"])
-
-            query += " ORDER BY distance_m ASC LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
-
+            params = [near_lat, near_lon] + cond_params + [limit, offset]
         else:
             # No proximity -- order by last_used descending, then name
-            query = "SELECT * FROM sites"
-            params = []
-
-            if search:
-                query += " WHERE (name LIKE ? OR notes LIKE ?)"
-                params.extend([f"%{search}%", f"%{search}%"])
-
-            query += " ORDER BY last_used DESC NULLS LAST, name ASC LIMIT ? OFFSET ?"
-            params.extend([limit, offset])
+            query = f"""
+                SELECT * FROM sites{where_sql}
+                ORDER BY last_used DESC NULLS LAST, name ASC LIMIT ? OFFSET ?
+            """
+            params = cond_params + [limit, offset]
 
         cursor = await db.execute(query, params)
         rows = await cursor.fetchall()
-
-        # Get total count
-        count_query = "SELECT COUNT(*) as cnt FROM sites"
-        count_params = []
-        if search:
-            count_query += " WHERE (name LIKE ? OR notes LIKE ?)"
-            count_params = [f"%{search}%", f"%{search}%"]
-        count_cursor = await db.execute(count_query, count_params)
-        count_row = await count_cursor.fetchone()
 
         if has_proximity:
             sites = [_row_to_dict(r, distance_m=r["distance_m"]) for r in rows]
         else:
             sites = [_row_to_dict(r) for r in rows]
 
-        return {"sites": sites, "total": count_row["cnt"]}
+        return {"sites": sites, "total": total}
 
 
 @router.get("/{site_id}")
@@ -192,13 +185,18 @@ async def get_site(site_id: int):
 
 @router.post("", status_code=201)
 async def create_site(site: SiteCreate):
-    """Create a new site with optional SpatiaLite geometry."""
+    """Create a new site with optional SpatiaLite geometry.
+
+    Automatically assigned to the active project.
+    """
+    active_pid = await get_active_project_id()
+
     async with get_db() as db:
         cursor = await db.execute(
             """
             INSERT INTO sites (name, lat, lon, height, ortho_height, datum, epoch,
-                               source, accuracy_h, accuracy_v, established, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                               source, accuracy_h, accuracy_v, established, notes, project_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 site.name,
@@ -213,6 +211,7 @@ async def create_site(site: SiteCreate):
                 site.accuracy_v,
                 site.established or datetime.now().strftime("%Y-%m-%d"),
                 site.notes,
+                active_pid,
             ),
         )
         site_id = cursor.lastrowid

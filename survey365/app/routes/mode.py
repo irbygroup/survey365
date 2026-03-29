@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..db import get_db
+from ..db import get_active_project_id, get_db
 from ..gnss import gnss_state
 from ..rtkbase import start_base_services, stop_base_services, write_position
 from ..ws.live import broadcast_event
@@ -124,13 +124,14 @@ async def start_known_base(req: KnownBaseRequest):
         await start_base_services()
 
         # Create session record
+        active_pid = await get_active_project_id()
         async with get_db() as db:
             cursor = await db.execute(
                 """
-                INSERT INTO sessions (mode, site_id, started_at)
-                VALUES ('known_base', ?, datetime('now'))
+                INSERT INTO sessions (mode, site_id, started_at, project_id)
+                VALUES ('known_base', ?, datetime('now'), ?)
                 """,
-                (req.site_id,),
+                (req.site_id, active_pid),
             )
             session_id = cursor.lastrowid
 
@@ -283,13 +284,14 @@ async def _run_relative_base(duration: int):
 
         # Save as a site with source='averaged'
         site_name = f"Relative Base {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        active_pid = await get_active_project_id()
 
         async with get_db() as db:
             cursor = await db.execute(
                 """
-                INSERT INTO sites (name, lat, lon, height, source, accuracy_h, accuracy_v, established, notes)
-                VALUES (?, ?, ?, ?, 'averaged', NULL, NULL, datetime('now'),
-                        ?)
+                INSERT INTO sites (name, lat, lon, height, source, accuracy_h, accuracy_v,
+                                   established, notes, project_id)
+                VALUES (?, ?, ?, ?, 'averaged', NULL, NULL, datetime('now'), ?, ?)
                 """,
                 (
                     site_name,
@@ -297,6 +299,7 @@ async def _run_relative_base(duration: int):
                     avg_lon,
                     avg_height,
                     f"Averaged from {len(lat_samples)} samples over {duration}s",
+                    active_pid,
                 ),
             )
             site_id = cursor.lastrowid
@@ -330,10 +333,10 @@ async def _run_relative_base(duration: int):
         async with get_db() as db:
             cursor = await db.execute(
                 """
-                INSERT INTO sessions (mode, site_id, started_at)
-                VALUES ('relative_base', ?, datetime('now'))
+                INSERT INTO sessions (mode, site_id, started_at, project_id)
+                VALUES ('relative_base', ?, datetime('now'), ?)
                 """,
-                (site_id,),
+                (site_id, active_pid),
             )
             session_id = cursor.lastrowid
             await db.commit()
@@ -423,19 +426,22 @@ async def resume_mode():
         raise HTTPException(status_code=409, detail="Mode change in progress")
 
     async with _mode_lock:
-        # Find last session
+        # Find last session (scoped to active project if one is set)
+        active_pid = await get_active_project_id()
         async with get_db() as db:
-            cursor = await db.execute(
-                """
+            query = """
                 SELECT s.id, s.mode, s.site_id, si.name as site_name,
                        si.lat, si.lon, si.height
                 FROM sessions s
                 LEFT JOIN sites si ON s.site_id = si.id
                 WHERE s.mode != 'idle'
-                ORDER BY s.started_at DESC
-                LIMIT 1
-                """
-            )
+            """
+            params: list = []
+            if active_pid is not None:
+                query += " AND s.project_id = ?"
+                params.append(active_pid)
+            query += " ORDER BY s.started_at DESC LIMIT 1"
+            cursor = await db.execute(query, params)
             session = await cursor.fetchone()
 
         if session is None:

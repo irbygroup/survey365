@@ -23,14 +23,57 @@
 <body x-data="survey365App()" x-init="init()" x-cloak>
 
   <!-- ============================================================
+       Project Gate -- Full-screen overlay until project is chosen
+       ============================================================ -->
+  <template x-if="showProjectGate">
+    <div class="s365-project-gate">
+      <div class="s365-project-card">
+        <h1>Survey365</h1>
+        <p class="s365-project-subtitle">Select a project to get started</p>
+
+        <!-- Existing projects -->
+        <div x-show="projects.length > 0" class="s365-project-list">
+          <template x-for="p in projects" :key="p.id">
+            <div class="s365-project-item" @click="activateProject(p)">
+              <div class="s365-project-item-info">
+                <span class="s365-project-item-name" x-text="p.name"></span>
+                <span class="s365-project-item-meta" x-text="p.description || p.client || ''" x-show="p.description || p.client"></span>
+              </div>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </template>
+        </div>
+
+        <!-- Create new project -->
+        <div class="s365-project-create">
+          <input type="text"
+                 x-model="newProjectName"
+                 placeholder="New project name..."
+                 @keydown.enter="createAndActivateProject()"
+                 autofocus>
+          <button @click="createAndActivateProject()" :disabled="!newProjectName.trim()">Create</button>
+        </div>
+        <p x-show="projectError" class="s365-project-error" x-text="projectError"></p>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============================================================
        Full-screen Map Container
        ============================================================ -->
   <div id="map"></div>
 
   <!-- ============================================================
-       Top Bar: Search + Layers + Menu
+       Top Bar: Project Tag + Search + Layers + Menu
        ============================================================ -->
   <div class="s365-top-bar">
+    <!-- Project tag -->
+    <button class="s365-project-tag"
+            x-show="activeProject && !showProjectGate"
+            @click="openProjectSwitcher()"
+            x-text="activeProject ? activeProject.name : ''">
+    </button>
+
     <!-- Search input -->
     <div class="s365-search-wrap">
       <input type="text"
@@ -75,6 +118,13 @@
            x-transition:leave-end="transform translate-x-full">
         <button class="s365-menu-close" @click="menuOpen = false" aria-label="Close menu">&times;</button>
 
+        <h4>Project</h4>
+        <button @click="openProjectSwitcher(); menuOpen = false">
+          <span x-text="activeProject ? activeProject.name : 'Select Project'"></span>
+          <span style="float:right; color:#94a3b8; font-size:13px;">Switch</span>
+        </button>
+
+        <hr>
         <h4>Mode</h4>
         <button @click="openModePanel(); menuOpen = false">Known Point Base</button>
         <button @click="startRelativeBase(); menuOpen = false">Relative Base (Quick)</button>
@@ -355,6 +405,43 @@
         </form>
         <p x-show="loginError" style="color: var(--s365-red); text-align: center; margin-top: 12px; font-size: 14px;" x-text="loginError"></p>
         <button class="s365-action-btn" @click="showLogin = false; loginError = ''; loginPassword = '';" style="margin-top: 12px;">Cancel</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============================================================
+       Project Switcher -- Bottom Sheet
+       ============================================================ -->
+  <template x-if="showProjectSwitcher">
+    <div>
+      <div class="s365-sheet-backdrop" @click="showProjectSwitcher = false"></div>
+      <div class="s365-sheet" x-transition:enter="transition ease-out duration-250"
+           x-transition:enter-start="transform translate-y-full"
+           x-transition:enter-end="transform translate-y-0">
+        <div class="s365-sheet-handle"></div>
+        <h3>Switch Project</h3>
+
+        <template x-for="p in projects" :key="p.id">
+          <div class="s365-project-item"
+               :class="{ 's365-project-active': activeProject && activeProject.id === p.id }"
+               @click="switchProject(p)">
+            <div class="s365-project-item-info">
+              <span class="s365-project-item-name" x-text="p.name"></span>
+              <span class="s365-project-item-meta" x-text="p.description || ''" x-show="p.description"></span>
+            </div>
+            <span x-show="activeProject && activeProject.id === p.id" style="color:var(--s365-green); font-weight:700; font-size:18px;">&#10003;</span>
+          </div>
+        </template>
+
+        <div class="s365-project-create" style="margin-top:16px;">
+          <input type="text"
+                 x-model="newProjectName"
+                 placeholder="New project name..."
+                 @keydown.enter="createAndSwitchProject()">
+          <button @click="createAndSwitchProject()" :disabled="!newProjectName.trim()">Create</button>
+        </div>
+
+        <button class="s365-action-btn" @click="showProjectSwitcher = false" style="margin-top:12px;">Cancel</button>
       </div>
     </div>
   </template>

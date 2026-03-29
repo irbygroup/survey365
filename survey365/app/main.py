@@ -28,6 +28,7 @@ from .routes import auth as auth_routes
 from .routes import config as config_routes
 from .routes import mode as mode_routes
 from .routes import ntrip as ntrip_routes
+from .routes import projects as projects_routes
 from .routes import sites as sites_routes
 from .routes import status as status_routes
 from .ws import live as ws_live
@@ -98,6 +99,7 @@ app.add_middleware(
 app.include_router(status_routes.router)
 app.include_router(mode_routes.router)
 app.include_router(sites_routes.router)
+app.include_router(projects_routes.router)
 app.include_router(ntrip_routes.router)
 app.include_router(config_routes.router)
 app.include_router(auth_routes.router)

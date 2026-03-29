@@ -84,43 +84,81 @@ async def init_db():
             "SELECT name FROM sqlite_master WHERE type='table' AND name='sites'"
         )
         row = await cursor.fetchone()
-        if row is not None:
-            return  # Already initialized
+        if row is None:
+            # Run initial migration
+            migration_file = MIGRATIONS_DIR / "001_initial.sql"
+            if migration_file.exists():
+                sql = migration_file.read_text()
+                # SpatiaLite-specific DDL needs special handling:
+                # Execute statements one at a time (executescript doesn't work with extensions)
+                statements = [s.strip() for s in sql.split(";") if s.strip()]
+                for stmt in statements:
+                    if not stmt:
+                        continue
+                    try:
+                        await db.execute(stmt)
+                    except Exception:
+                        # SpatiaLite functions (AddGeometryColumn, etc.) may fail
+                        # if SpatiaLite is not available -- that is acceptable for dev
+                        pass
 
-        # Run initial migration
-        migration_file = MIGRATIONS_DIR / "001_initial.sql"
-        if migration_file.exists():
-            sql = migration_file.read_text()
-            # SpatiaLite-specific DDL needs special handling:
-            # Execute statements one at a time (executescript doesn't work with extensions)
-            statements = [s.strip() for s in sql.split(";") if s.strip()]
-            for stmt in statements:
-                if not stmt:
-                    continue
+            # Initialize SpatiaLite metadata if extension is loaded
+            ext = _get_spatialite_ext()
+            if ext:
                 try:
-                    await db.execute(stmt)
+                    await db.execute("SELECT InitSpatialMetaData(1)")
                 except Exception:
-                    # SpatiaLite functions (AddGeometryColumn, etc.) may fail
-                    # if SpatiaLite is not available -- that is acceptable for dev
-                    pass
+                    pass  # Already initialized or not available
+                try:
+                    await db.execute(
+                        "SELECT AddGeometryColumn('sites', 'geom', 4326, 'POINT', 'XY')"
+                    )
+                except Exception:
+                    pass  # Column already exists
+                try:
+                    await db.execute("SELECT CreateSpatialIndex('sites', 'geom')")
+                except Exception:
+                    pass  # Index already exists
 
-        # Initialize SpatiaLite metadata if extension is loaded
-        ext = _get_spatialite_ext()
-        if ext:
-            try:
-                await db.execute("SELECT InitSpatialMetaData(1)")
-            except Exception:
-                pass  # Already initialized or not available
-            try:
-                await db.execute(
-                    "SELECT AddGeometryColumn('sites', 'geom', 4326, 'POINT', 'XY')"
+        # --- Migration 002: Projects ---
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='projects'"
+        )
+        if await cursor.fetchone() is None:
+            migration_file = MIGRATIONS_DIR / "002_projects.sql"
+            if migration_file.exists():
+                sql = migration_file.read_text()
+                for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+                    try:
+                        await db.execute(stmt)
+                    except Exception:
+                        pass  # Column may already exist on re-run
+
+            # Assign orphaned sites (pre-existing) to a default project
+            cursor = await db.execute(
+                "SELECT COUNT(*) as cnt FROM sites WHERE project_id IS NULL"
+            )
+            orphan_count = (await cursor.fetchone())["cnt"]
+            if orphan_count > 0:
+                cursor = await db.execute(
+                    """
+                    INSERT INTO projects (name, description, last_accessed)
+                    VALUES ('Default Project', 'Auto-created for existing sites', datetime('now'))
+                    """
                 )
-            except Exception:
-                pass  # Column already exists
-            try:
-                await db.execute("SELECT CreateSpatialIndex('sites', 'geom')")
-            except Exception:
-                pass  # Index already exists
+                default_pid = cursor.lastrowid
+                await db.execute(
+                    "UPDATE sites SET project_id = ? WHERE project_id IS NULL",
+                    (default_pid,),
+                )
+                # Auto-activate the default project
+                await db.execute(
+                    """
+                    INSERT OR REPLACE INTO config (key, value, updated_at)
+                    VALUES ('active_project_id', ?, datetime('now'))
+                    """,
+                    (str(default_pid),),
+                )
 
         await db.commit()
 
@@ -155,3 +193,19 @@ async def get_all_config() -> dict[str, str]:
         cursor = await db.execute("SELECT key, value FROM config")
         rows = await cursor.fetchall()
         return {row["key"]: row["value"] for row in rows}
+
+
+async def get_active_project_id() -> int | None:
+    """Get the active project ID from config."""
+    value = await get_config("active_project_id")
+    if value and value.strip():
+        try:
+            return int(value)
+        except ValueError:
+            return None
+    return None
+
+
+async def set_active_project_id(project_id: int | None):
+    """Set the active project ID in config."""
+    await set_config("active_project_id", str(project_id) if project_id else "")

@@ -27,6 +27,16 @@ function survey365App() {
     defaultZoom: 12,
 
     /* ---------------------------------------------------------------
+     * Project State
+     * --------------------------------------------------------------- */
+    activeProject: null,
+    projects: [],
+    showProjectGate: true,
+    showProjectSwitcher: false,
+    newProjectName: '',
+    projectError: '',
+
+    /* ---------------------------------------------------------------
      * Menu State
      * --------------------------------------------------------------- */
     menuOpen: false,
@@ -150,16 +160,25 @@ function survey365App() {
     async init() {
       var self = this;
 
-      /* 1. Fetch config (MapTiler key, defaults) */
+      /* 1. Check for active project — gate the app if none */
+      await this._fetchActiveProject();
+      if (!this.activeProject) {
+        await this._fetchProjects();
+        this.showProjectGate = true;
+      } else {
+        this.showProjectGate = false;
+      }
+
+      /* 2. Fetch config (MapTiler key, defaults) */
       await this._fetchConfig();
 
-      /* 2. Check auth state */
+      /* 3. Check auth state */
       this._checkAuth();
 
-      /* 3. Initialize map */
+      /* 4. Initialize map */
       this._initMap();
 
-      /* 4. Listen for WebSocket events */
+      /* 5. Listen for WebSocket events */
       document.addEventListener('s365:status', function (e) {
         self._onStatus(e.detail);
       });
@@ -174,8 +193,10 @@ function survey365App() {
       });
       document.addEventListener('s365:map-ready', function () {
         self.mapReady = true;
-        /* Load sites after map is ready */
-        self._loadSites();
+        /* Only load sites if project is active */
+        if (self.activeProject) {
+          self._loadSites();
+        }
       });
       document.addEventListener('s365:start-base-at-site', function (e) {
         var detail = e.detail;
@@ -187,15 +208,15 @@ function survey365App() {
         }
       });
 
-      /* 5. Connect WebSocket */
+      /* 6. Connect WebSocket */
       if (window.S365WS) {
         window.S365WS.connect();
       }
 
-      /* 6. Fetch initial status via REST (before WS connects) */
+      /* 7. Fetch initial status via REST (before WS connects) */
       this._fetchInitialStatus();
 
-      /* 7. Poll satellites when status detail panel is open */
+      /* 8. Poll satellites when status detail panel is open */
       this.$watch('showStatusDetail', function (open) {
         if (open) {
           self._fetchSatellites();
@@ -204,6 +225,129 @@ function survey365App() {
           if (self._satPollTimer) { clearInterval(self._satPollTimer); self._satPollTimer = null; }
         }
       });
+    },
+
+    /* ---------------------------------------------------------------
+     * Project Management
+     * --------------------------------------------------------------- */
+
+    async _fetchActiveProject() {
+      try {
+        var res = await fetch('/api/projects/active');
+        if (res.ok) {
+          var data = await res.json();
+          this.activeProject = data.project || null;
+        }
+      } catch (_) {
+        this.activeProject = null;
+      }
+    },
+
+    async _fetchProjects() {
+      try {
+        var res = await fetch('/api/projects');
+        if (res.ok) {
+          var data = await res.json();
+          this.projects = data.projects || [];
+        }
+      } catch (_) {
+        this.projects = [];
+      }
+    },
+
+    async activateProject(project) {
+      this.projectError = '';
+      try {
+        var res = await fetch('/api/projects/' + project.id + '/activate', { method: 'POST' });
+        if (res.ok) {
+          this.activeProject = project;
+          this.showProjectGate = false;
+          this.showProjectSwitcher = false;
+          /* Load sites for the newly active project */
+          if (this.mapReady) {
+            this._loadSites();
+          }
+          this.showToast('Project: ' + project.name, 'info');
+        } else {
+          var err = await res.json().catch(function () { return {}; });
+          this.projectError = err.detail || 'Failed to activate project';
+        }
+      } catch (err) {
+        this.projectError = 'Network error: ' + err.message;
+      }
+    },
+
+    async createAndActivateProject() {
+      var name = this.newProjectName.trim();
+      if (!name) return;
+      this.projectError = '';
+
+      try {
+        var res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name })
+        });
+
+        if (res.ok) {
+          var project = await res.json();
+          this.newProjectName = '';
+          await this.activateProject(project);
+        } else {
+          var err = await res.json().catch(function () { return {}; });
+          this.projectError = err.detail || 'Failed to create project';
+        }
+      } catch (err) {
+        this.projectError = 'Network error: ' + err.message;
+      }
+    },
+
+    openProjectSwitcher() {
+      this._fetchProjects();
+      this.showProjectSwitcher = true;
+      this.newProjectName = '';
+      this.projectError = '';
+    },
+
+    async switchProject(project) {
+      if (this.activeProject && this.activeProject.id === project.id) {
+        this.showProjectSwitcher = false;
+        return;
+      }
+      /* Stop active mode before switching */
+      if (this.mode !== 'idle') {
+        await this.stopMode();
+      }
+      await this.activateProject(project);
+    },
+
+    async createAndSwitchProject() {
+      var name = this.newProjectName.trim();
+      if (!name) return;
+      this.projectError = '';
+
+      try {
+        var res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name })
+        });
+
+        if (res.ok) {
+          var project = await res.json();
+          this.newProjectName = '';
+          /* Stop active mode before switching */
+          if (this.mode !== 'idle') {
+            await this.stopMode();
+          }
+          await this.activateProject(project);
+        } else {
+          var err = await res.json().catch(function () { return {}; });
+          this.projectError = err.detail || 'Failed to create project';
+        }
+      } catch (err) {
+        this.projectError = 'Network error: ' + err.message;
+      }
     },
 
     /* ---------------------------------------------------------------

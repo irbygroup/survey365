@@ -21,6 +21,171 @@
   --s365-text-muted: #94a3b8;
 }
 
+/* --- Project Gate --- */
+.s365-project-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.s365-project-card {
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 32px 24px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+.s365-project-card h1 {
+  font-size: 28px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 4px 0;
+  text-align: center;
+}
+
+.s365-project-subtitle {
+  text-align: center;
+  color: #64748b;
+  font-size: 15px;
+  margin-bottom: 24px;
+}
+
+.s365-project-list {
+  margin-bottom: 20px;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.s365-project-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  min-height: var(--s365-touch-min);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.s365-project-item:hover,
+.s365-project-item:active {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.s365-project-item.s365-project-active {
+  border-color: var(--s365-green);
+  background: #f0fdf4;
+}
+
+.s365-project-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.s365-project-item-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+  display: block;
+}
+
+.s365-project-item-meta {
+  font-size: 13px;
+  color: #64748b;
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s365-project-create {
+  display: flex;
+  gap: 8px;
+}
+
+.s365-project-create input {
+  flex: 1;
+  height: var(--s365-touch-min);
+  border: 2px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0 14px;
+  font-size: 16px;
+  color: #1e293b;
+  margin: 0;
+}
+
+.s365-project-create input:focus {
+  border-color: var(--s365-blue);
+  outline: none;
+}
+
+.s365-project-create button {
+  height: var(--s365-touch-min);
+  padding: 0 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--s365-blue);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.s365-project-create button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.s365-project-create button:active:not(:disabled) {
+  opacity: 0.8;
+}
+
+.s365-project-error {
+  color: var(--s365-red);
+  font-size: 14px;
+  text-align: center;
+  margin-top: 12px;
+}
+
+/* --- Project Tag (top bar) --- */
+.s365-project-tag {
+  height: 36px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 8px;
+  background: var(--s365-panel-bg);
+  color: var(--s365-text-light);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: var(--s365-panel-shadow);
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+
+.s365-project-tag:active {
+  opacity: 0.8;
+}
+
 /* --- Reset: map fills entire viewport --- */
 html, body {
   margin: 0;
