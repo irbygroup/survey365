@@ -188,7 +188,41 @@ else
     warn "RTKBase settings.conf not found at $RTKBASE_SETTINGS -- skipping port change"
 fi
 
-# ── Step 5: Deploy nginx configuration ──────────────────────────────────
+# ── Step 5: Generate SSL certificate (if not already present) ───────────
+SSL_DIR="/etc/nginx/ssl"
+SSL_CERT="$SSL_DIR/survey365.crt"
+SSL_KEY="$SSL_DIR/survey365.key"
+
+if [[ ! -f "$SSL_CERT" ]] || [[ ! -f "$SSL_KEY" ]]; then
+    info "Generating self-signed SSL certificate (10 year, all interfaces)..."
+    mkdir -p "$SSL_DIR"
+
+    # Collect all IPs for SAN
+    TAILSCALE_IP=$(tailscale ip -4 2>/dev/null || echo "")
+    HOSTNAME_FQDN=$(tailscale status --json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('Self',{}).get('DNSName','').rstrip('.'))" 2>/dev/null || echo "")
+    SAN="DNS:$(hostname),DNS:localhost"
+    [[ -n "$HOSTNAME_FQDN" ]] && SAN="$SAN,DNS:$HOSTNAME_FQDN"
+    [[ -n "$TAILSCALE_IP" ]] && SAN="$SAN,IP:$TAILSCALE_IP"
+    SAN="$SAN,IP:127.0.0.1"
+    # Add all non-loopback IPv4 addresses
+    for ip in $(hostname -I 2>/dev/null); do
+        [[ "$ip" == 127.* ]] && continue
+        [[ "$ip" == *:* ]] && continue  # skip IPv6
+        SAN="$SAN,IP:$ip"
+    done
+
+    openssl req -x509 -nodes -days 3650 -newkey rsa:2048 \
+        -keyout "$SSL_KEY" \
+        -out "$SSL_CERT" \
+        -subj "/CN=$(hostname)" \
+        -addext "subjectAltName=$SAN" \
+        2>/dev/null
+    ok "SSL certificate generated (SAN: $SAN)"
+else
+    ok "SSL certificate already exists"
+fi
+
+# ── Step 6: Deploy nginx configuration ──────────────────────────────────
 info "Deploying nginx configuration..."
 
 NGINX_SRC="$SURVEY365_DIR/nginx/survey365.conf"
