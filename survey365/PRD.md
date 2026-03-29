@@ -930,15 +930,15 @@ CREATE TABLE config (
 |-------|-------|---------|
 | **1** | Map UI + status + known point base + relative base + point DB + project organization + simple password auth | Field-usable base station with map interface. Project gate, switcher, project-scoped sites/sessions. **DONE.** |
 | **2** | CORS establish mode (rtkrcv) + NTRIP profile management | Auto-precise positioning from ALDOT CORS |
-| **3** | Cell hotspot (hostapd + NAT + dnsmasq) + captive portal | Self-contained field unit, no external WiFi needed |
+| **3** | File import (KML/DXF/DWG/GeoJSON/SHP) + layer management | Site plans and design files on the map |
 | **4** | Multi-rover tracking on map + rover management | See all crew positions in real-time |
-| **5** | File import (KML/DXF/DWG/GeoJSON/SHP) + layer management | Site plans and design files on the map |
-| **6** | OPUS pipeline (auto-trim RINEX + submit + result import) | Survey-grade accuracy automation |
-| **7** | Rover mode (Pi as rover) + point marking | Full survey capability without Reach RX |
-| **8** | Admin panel (WiFi, modem, IMEI, system health, config) | Complete device management from browser |
-| **9** | Cloudflare Tunnel + remote access | Office monitoring and remote control |
-| **10** | System management (update, reboot, shutdown) + boot automation | Self-maintaining field unit |
-| **11** | Offline tile cache + PWA manifest + Find My Nail | Production polish for daily field use |
+| **5** | OPUS pipeline (auto-trim RINEX + submit + result import) | Survey-grade accuracy automation |
+| **6** | Rover mode (Pi as rover) + point marking | Full survey capability without Reach RX |
+| **7** | Admin panel (WiFi, modem, IMEI, system health, config) | Complete device management from browser |
+| **8** | Cloudflare Tunnel + remote access | Office monitoring and remote control |
+| **9** | System management (update, reboot, shutdown) + boot automation | Self-maintaining field unit |
+| **10** | Offline tile cache + PWA manifest + Find My Nail | Production polish for daily field use |
+| **11** | Cell hotspot (hostapd + NAT + dnsmasq) + captive portal | Self-contained field unit, no external WiFi needed |
 
 ---
 
