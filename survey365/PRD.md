@@ -314,6 +314,45 @@ layers:
 
 ---
 
+## Projects
+
+All work is organized into projects. Sites, sessions, and (future) layers are scoped to the active project. The app gates on startup — the user must select or create a project before the map becomes usable.
+
+### Schema
+
+```
+projects:
+  id            INTEGER PRIMARY KEY
+  name          TEXT NOT NULL
+  description   TEXT
+  client        TEXT
+  created_at    TEXT
+  updated_at    TEXT
+  last_accessed TEXT
+```
+
+### Behavior
+
+- **Gate on load:** If no active project, a full-screen overlay requires project selection before the app is usable.
+- **Auto-open last:** On subsequent loads, the last-used project is auto-activated (no gate shown).
+- **Switch project:** Available in the hamburger menu. Stops any active mode before switching.
+- **Project tag:** The active project name appears in the top bar. Tapping it opens the switcher.
+- **Admin filter:** The admin panel can filter sites by project or view all projects.
+- **Migration:** On upgrade from a pre-project database, existing sites are auto-assigned to a "Default Project" which is auto-activated.
+
+### API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/projects | List all projects (sorted by last_accessed) |
+| GET | /api/projects/active | Get the currently active project |
+| POST | /api/projects | Create project. Body: {name, description?, client?} |
+| PUT | /api/projects/:id | Update project |
+| DELETE | /api/projects/:id | Delete project (fails if has sites) |
+| POST | /api/projects/:id/activate | Set as active project |
+
+---
+
 ## Saved Points Database
 
 ### Schema
@@ -336,11 +375,13 @@ sites:
   notes           TEXT
   photo_path      TEXT                -- path to photo on disk
   opus_job_id     TEXT                -- OPUS submission ID if pending
+  project_id      INTEGER REFERENCES projects(id)
   geom            POINT               -- SpatiaLite geometry for spatial queries
 ```
 
 ### Features
 
+- **Project-scoped:** Sites are scoped to the active project. Creating a site auto-assigns it. Queries filter by active project unless `all_projects=true` is passed.
 - **Proximity sort:** Uses phone GPS (browser geolocation) + SpatiaLite distance query to sort by nearest first.
 - **Find My Nail:** Compass bearing + distance to selected point using phone GPS. Updates in real-time as user walks.
 - **Map markers:** All saved points shown on map. Tap to select, long-press for detail panel.
@@ -672,11 +713,22 @@ On power-on, the following happens automatically (systemd):
 | POST | /api/mode/stop | Stop current mode → IDLE |
 | POST | /api/mode/resume | Resume last session |
 
+### Projects
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | /api/projects | List all projects (sorted by last_accessed) |
+| GET | /api/projects/active | Get currently active project |
+| POST | /api/projects | Create project. Body: {name, description?, client?} |
+| PUT | /api/projects/:id | Update project |
+| DELETE | /api/projects/:id | Delete project (fails if has sites) |
+| POST | /api/projects/:id/activate | Set as active project |
+
 ### Sites (Points)
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | /api/sites | List all sites. Query: ?near_lat=&near_lon= for proximity sort |
+| GET | /api/sites | List sites (scoped to active project). Query: ?near_lat=&near_lon=&all_projects=true |
 | GET | /api/sites/:id | Get site detail |
 | POST | /api/sites | Create site |
 | PUT | /api/sites/:id | Update site |
@@ -769,6 +821,7 @@ CREATE TABLE sites (
     notes           TEXT,
     photo_path      TEXT,
     opus_job_id     TEXT,
+    project_id      INTEGER REFERENCES projects(id),
     created_at      TEXT DEFAULT (datetime('now')),
     updated_at      TEXT DEFAULT (datetime('now'))
 );
@@ -804,12 +857,24 @@ CREATE TABLE ntrip_profiles (
     notes           TEXT
 );
 
+-- Survey projects (group sites + sessions)
+CREATE TABLE projects (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    client          TEXT,
+    created_at      TEXT DEFAULT (datetime('now')),
+    updated_at      TEXT DEFAULT (datetime('now')),
+    last_accessed   TEXT
+);
+
 -- Session history (for resume + logging)
 CREATE TABLE sessions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     mode            TEXT NOT NULL,
     site_id         INTEGER REFERENCES sites(id),
     ntrip_profile_id INTEGER REFERENCES ntrip_profiles(id),
+    project_id      INTEGER REFERENCES projects(id),
     started_at      TEXT DEFAULT (datetime('now')),
     ended_at        TEXT,
     rinex_path      TEXT,
@@ -863,7 +928,7 @@ CREATE TABLE config (
 
 | Phase | Scope | Outcome |
 |-------|-------|---------|
-| **1** | Map UI + status + known point base + relative base + point DB + simple password auth | Field-usable base station with map interface |
+| **1** | Map UI + status + known point base + relative base + point DB + project organization + simple password auth | Field-usable base station with map interface. Project gate, switcher, project-scoped sites/sessions. **DONE.** |
 | **2** | CORS establish mode (rtkrcv) + NTRIP profile management | Auto-precise positioning from ALDOT CORS |
 | **3** | Cell hotspot (hostapd + NAT + dnsmasq) + captive portal | Self-contained field unit, no external WiFi needed |
 | **4** | Multi-rover tracking on map + rover management | See all crew positions in real-time |
@@ -904,7 +969,8 @@ survey365/
 │   ├── routes/
 │   │   ├── status.py           # /api/status, /api/satellites
 │   │   ├── mode.py             # /api/mode/*
-│   │   ├── sites.py            # /api/sites CRUD
+│   │   ├── projects.py         # /api/projects CRUD + activate
+│   │   ├── sites.py            # /api/sites CRUD (project-scoped)
 │   │   ├── rovers.py           # /api/rovers
 │   │   ├── layers.py           # /api/layers
 │   │   ├── ntrip.py            # /api/ntrip
@@ -934,7 +1000,8 @@ survey365/
 │       ├── icons/              # Map markers, mode icons
 │       └── manifest.json       # PWA manifest
 ├── migrations/
-│   └── 001_initial.sql         # All tables
+│   ├── 001_initial.sql         # Core tables (sites, sessions, config, ntrip_profiles)
+│   └── 002_projects.sql        # Projects table + project_id on sites/sessions
 ├── systemd/
 │   ├── survey365.service       # Main app
 │   ├── survey365-hotspot.service # Hotspot management
