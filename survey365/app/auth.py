@@ -9,13 +9,13 @@ Session secret stored in config table under 'session_secret' (auto-generated on 
 Cookie name: s365_session, max age: 24 hours.
 """
 
+import hashlib
 import os
 import secrets
 import time
 
 from fastapi import Cookie, HTTPException, Request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from passlib.hash import bcrypt
 
 from .db import get_config, set_config
 
@@ -49,15 +49,26 @@ def reset_serializer():
 
 
 async def hash_password(password: str) -> str:
-    """Hash a password using bcrypt."""
-    return bcrypt.hash(password)
+    """Hash a password using PBKDF2-SHA256."""
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260000)
+    return f"pbkdf2:sha256:260000${salt}${dk.hex()}"
 
 
 async def verify_password(password: str, password_hash: str) -> bool:
-    """Verify a password against a bcrypt hash."""
+    """Verify a password against a PBKDF2-SHA256 hash."""
     if not password_hash:
         return False
-    return bcrypt.verify(password, password_hash)
+    try:
+        parts = password_hash.split("$")
+        if len(parts) != 3:
+            return False
+        header, salt, stored_hash = parts
+        iterations = int(header.split(":")[-1])
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), iterations)
+        return secrets.compare_digest(dk.hex(), stored_hash)
+    except (ValueError, IndexError):
+        return False
 
 
 async def is_password_set() -> bool:

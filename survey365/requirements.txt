@@ -3,6 +3,5 @@ uvicorn[standard]==0.34.0
 websockets==14.1
 pydantic==2.10.4
 aiosqlite==0.20.0
-passlib[bcrypt]==1.7.4
 python-multipart==0.0.18
 itsdangerous==2.2.0
