@@ -1,21 +1,18 @@
 """
 WebSocket endpoint for live GNSS and mode updates.
 
-Sends:
-- "status" messages every 1 second with GNSS state
-- "mode_change" messages immediately when mode transitions occur
-- "establish_progress" messages during relative base averaging
-- "pong" in response to client "ping"
-
-Uses per-client queues to avoid concurrent send/receive on the same
-WebSocket (starlette is not safe for concurrent access from different tasks).
+Uses a simple send-loop pattern: the handler accepts the connection,
+then loops sending status every second. Client messages are read
+non-blockingly between sends.
 """
 
 import asyncio
 import json
 import logging
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from ..gnss import gnss_state
 
@@ -23,58 +20,63 @@ logger = logging.getLogger("survey365.ws")
 
 router = APIRouter()
 
-# Per-client outbound message queues
-_client_queues: dict[WebSocket, asyncio.Queue] = {}
+_clients: set[WebSocket] = set()
 
 
 async def broadcast_event(event: dict):
-    """Broadcast a JSON event to all connected WebSocket clients.
-
-    Puts the message into each client's queue. The per-client send loop
-    picks it up and sends it on the WebSocket.
-    """
-    if not _client_queues:
+    """Broadcast a JSON event to all connected WebSocket clients."""
+    if not _clients:
         return
-
     message = json.dumps(event)
-    dead = []
-    for ws, queue in _client_queues.items():
+    dead = set()
+    for ws in list(_clients):
         try:
-            queue.put_nowait(message)
-        except asyncio.QueueFull:
-            dead.append(ws)
+            if ws.client_state == WebSocketState.CONNECTED:
+                await ws.send_text(message)
+        except Exception:
+            dead.add(ws)
+    _clients.difference_update(dead)
 
-    for ws in dead:
-        _client_queues.pop(ws, None)
+
+_broadcast_task: asyncio.Task | None = None
+_service_cache = {}
+_service_cache_time = 0
 
 
 async def _status_broadcast_loop():
     """Background loop: broadcast GNSS status to all clients every 1 second."""
-    tick = 0
-    last_services = {}
+    global _service_cache, _service_cache_time
 
     while True:
         try:
-            if _client_queues:
+            if _clients:
                 from ..routes.mode import get_mode_state
                 from ..rtkbase import get_service_status
 
                 gnss = await gnss_state.snapshot()
                 mode_state = get_mode_state()
 
-                tick += 1
-                if tick % 5 == 1:
-                    last_services = await get_service_status()
+                now = time.monotonic()
+                if now - _service_cache_time > 5:
+                    _service_cache = await get_service_status()
+                    _service_cache_time = now
 
-                message = {
+                message = json.dumps({
                     "type": "status",
                     "gnss": gnss,
                     "mode": mode_state["mode"],
                     "mode_label": mode_state["mode_label"],
-                    "services": last_services,
-                }
+                    "services": _service_cache,
+                })
 
-                await broadcast_event(message)
+                dead = set()
+                for ws in list(_clients):
+                    try:
+                        if ws.client_state == WebSocketState.CONNECTED:
+                            await ws.send_text(message)
+                    except Exception:
+                        dead.add(ws)
+                _clients.difference_update(dead)
 
         except asyncio.CancelledError:
             break
@@ -84,11 +86,7 @@ async def _status_broadcast_loop():
         await asyncio.sleep(1.0)
 
 
-_broadcast_task: asyncio.Task | None = None
-
-
 def start_broadcast():
-    """Start the background status broadcast loop."""
     global _broadcast_task
     if _broadcast_task is None or _broadcast_task.done():
         _broadcast_task = asyncio.create_task(_status_broadcast_loop())
@@ -96,7 +94,6 @@ def start_broadcast():
 
 
 async def stop_broadcast():
-    """Stop the background status broadcast loop."""
     global _broadcast_task
     if _broadcast_task is not None:
         _broadcast_task.cancel()
@@ -112,57 +109,35 @@ async def stop_broadcast():
 async def websocket_live(ws: WebSocket):
     """WebSocket endpoint for live status updates.
 
-    Accepts any connection (no auth -- field crew access).
-    Uses two concurrent tasks:
-    - sender: drains the per-client queue and sends messages
-    - receiver: reads client messages (ping/pong)
+    Simple pattern: accept, add to client set, keep alive by reading.
+    The broadcast loop handles sending to all clients.
     """
     await ws.accept()
-
-    queue: asyncio.Queue = asyncio.Queue(maxsize=50)
-    _client_queues[ws] = queue
-    logger.info("WebSocket client connected (%d total)", len(_client_queues))
-
-    async def sender():
-        """Send queued messages to the client."""
-        try:
-            while True:
-                msg = await queue.get()
-                await ws.send_text(msg)
-        except Exception as exc:
-            logger.warning("WS sender error: %s: %s", type(exc).__name__, exc)
-
-    async def receiver():
-        """Read client messages."""
-        try:
-            while True:
-                data = await ws.receive()
-                if data["type"] == "websocket.disconnect":
-                    break
-                if data["type"] == "websocket.receive":
-                    raw = data.get("text", "")
-                    try:
-                        msg = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
-                    if msg.get("type") == "ping":
-                        queue.put_nowait(json.dumps({"type": "pong"}))
-        except WebSocketDisconnect:
-            pass
-        except Exception as exc:
-            logger.warning("WS receiver error: %s: %s", type(exc).__name__, exc)
-
-    sender_task = asyncio.create_task(sender())
-    receiver_task = asyncio.create_task(receiver())
+    _clients.add(ws)
+    client_count = len(_clients)
+    logger.info("WebSocket client connected (%d total)", client_count)
 
     try:
-        # Wait for either task to finish (receiver finishes on disconnect)
-        done, pending = await asyncio.wait(
-            [sender_task, receiver_task],
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        for task in pending:
-            task.cancel()
+        # Just keep reading — this keeps the connection alive.
+        # The broadcast loop sends status messages directly.
+        while True:
+            msg = await ws.receive()
+            if msg["type"] == "websocket.disconnect":
+                break
+            # Handle ping from client
+            if msg["type"] == "websocket.receive":
+                text = msg.get("text", "")
+                if text:
+                    try:
+                        parsed = json.loads(text)
+                        if parsed.get("type") == "ping":
+                            await ws.send_text(json.dumps({"type": "pong"}))
+                    except (json.JSONDecodeError, Exception):
+                        pass
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        logger.debug("WebSocket error: %s: %s", type(exc).__name__, exc)
     finally:
-        _client_queues.pop(ws, None)
-        logger.info("WebSocket client disconnected (%d remaining)", len(_client_queues))
+        _clients.discard(ws)
+        logger.info("WebSocket client disconnected (%d remaining)", len(_clients))
