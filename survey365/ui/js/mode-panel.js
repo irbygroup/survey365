@@ -97,6 +97,31 @@ function survey365App() {
     showEstablishPanel: false,
 
     /* ---------------------------------------------------------------
+     * Status Detail Panel
+     * --------------------------------------------------------------- */
+    showStatusDetail: false,
+    satellites: [],
+    _satPollTimer: null,
+
+    /* ---------------------------------------------------------------
+     * Computed: constellation summary from satellite list
+     * --------------------------------------------------------------- */
+    get constellationSummary() {
+      var counts = {};
+      this.satellites.forEach(function (s) {
+        if (s.cn0 <= 0) return;
+        var name = s.constellation || 'Unknown';
+        if (!counts[name]) counts[name] = { total: 0, used: 0 };
+        counts[name].total++;
+        if (s.used) counts[name].used++;
+      });
+      var clsMap = { 'GPS': 'gps', 'Galileo': 'gal', 'BeiDou': 'bds', 'GLONASS': 'glo', 'SBAS': 'sbas' };
+      return Object.keys(counts).map(function (name) {
+        return { name: name, used: counts[name].used, total: counts[name].total, cls: clsMap[name] || '' };
+      });
+    },
+
+    /* ---------------------------------------------------------------
      * Toast
      * --------------------------------------------------------------- */
     toasts: [],
@@ -169,6 +194,16 @@ function survey365App() {
 
       /* 6. Fetch initial status via REST (before WS connects) */
       this._fetchInitialStatus();
+
+      /* 7. Poll satellites when status detail panel is open */
+      this.$watch('showStatusDetail', function (open) {
+        if (open) {
+          self._fetchSatellites();
+          self._satPollTimer = setInterval(function () { self._fetchSatellites(); }, 2000);
+        } else {
+          if (self._satPollTimer) { clearInterval(self._satPollTimer); self._satPollTimer = null; }
+        }
+      });
     },
 
     /* ---------------------------------------------------------------
@@ -223,6 +258,16 @@ function survey365App() {
     /* ---------------------------------------------------------------
      * _fetchInitialStatus -- GET /api/status for initial state
      * --------------------------------------------------------------- */
+    async _fetchSatellites() {
+      try {
+        var res = await fetch('/api/satellites');
+        if (res.ok) {
+          var data = await res.json();
+          this.satellites = data.satellites || [];
+        }
+      } catch (err) { /* ignore */ }
+    },
+
     async _fetchInitialStatus() {
       try {
         var res = await fetch('/api/status');

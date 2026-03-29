@@ -99,9 +99,9 @@
   </template>
 
   <!-- ============================================================
-       Bottom-left Status Strip
+       Bottom-left Status Strip (clickable to expand)
        ============================================================ -->
-  <div class="s365-status-strip">
+  <div class="s365-status-strip" @click="showStatusDetail = !showStatusDetail" style="cursor:pointer">
     <div class="s365-mode-indicator" :class="modeColor">
       <span class="s365-mode-dot"></span>
       <span x-text="modeLabel"></span>
@@ -114,6 +114,86 @@
       <span x-show="gnss.accuracy_h > 0">
         Acc: <strong x-text="gnss.accuracy_h < 1 ? (gnss.accuracy_h * 1000).toFixed(0) + 'mm' : gnss.accuracy_h.toFixed(3) + 'm'"></strong>
       </span>
+      <span class="s365-expand-arrow" :class="showStatusDetail ? 'open' : ''">&#9650;</span>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       Status Detail Panel (slides up when strip is tapped)
+       ============================================================ -->
+  <div class="s365-status-detail" x-show="showStatusDetail" x-transition
+       @click.outside="showStatusDetail = false">
+
+    <!-- Position -->
+    <div class="s365-detail-section">
+      <div class="s365-detail-title">Position</div>
+      <div class="s365-detail-grid">
+        <span class="s365-detail-label">Lat</span>
+        <span class="s365-detail-value" x-text="gnss.latitude ? gnss.latitude.toFixed(8) : '--'"></span>
+        <span class="s365-detail-label">Lon</span>
+        <span class="s365-detail-value" x-text="gnss.longitude ? gnss.longitude.toFixed(8) : '--'"></span>
+        <span class="s365-detail-label">Height</span>
+        <span class="s365-detail-value" x-text="gnss.height ? gnss.height.toFixed(3) + ' m' : '--'"></span>
+      </div>
+    </div>
+
+    <!-- Accuracy -->
+    <div class="s365-detail-section">
+      <div class="s365-detail-title">Accuracy</div>
+      <div class="s365-detail-grid">
+        <span class="s365-detail-label">Horizontal</span>
+        <span class="s365-detail-value" x-text="gnss.accuracy_h ? gnss.accuracy_h.toFixed(3) + ' m' : '--'"></span>
+        <span class="s365-detail-label">Vertical</span>
+        <span class="s365-detail-value" x-text="gnss.accuracy_v ? gnss.accuracy_v.toFixed(3) + ' m' : '--'"></span>
+        <span class="s365-detail-label">PDOP</span>
+        <span class="s365-detail-value" x-text="gnss.pdop ? gnss.pdop.toFixed(2) : '--'"></span>
+      </div>
+    </div>
+
+    <!-- Satellites -->
+    <div class="s365-detail-section">
+      <div class="s365-detail-title">Satellites
+        <span class="s365-detail-sub" x-text="gnss.satellites_used + ' used / ' + gnss.satellites_visible + ' visible'"></span>
+      </div>
+      <div class="s365-sat-bars" x-show="satellites.length > 0">
+        <template x-for="sat in satellites.filter(s => s.cn0 > 0).sort((a,b) => b.cn0 - a.cn0)" :key="sat.constellation + sat.svid">
+          <div class="s365-sat-bar-wrap">
+            <div class="s365-sat-bar"
+                 :style="'height:' + Math.max(4, sat.cn0 * 1.8) + 'px'"
+                 :class="sat.used ? 'used' : 'unused'"
+                 :title="sat.constellation + ' ' + sat.svid + ': ' + sat.cn0 + ' dB'">
+            </div>
+            <span class="s365-sat-label" x-text="sat.constellation.charAt(0) + sat.svid"
+                  :class="{'gps': sat.constellation==='GPS', 'gal': sat.constellation==='Galileo', 'bds': sat.constellation==='BeiDou', 'glo': sat.constellation==='GLONASS', 'sbas': sat.constellation==='SBAS'}"></span>
+          </div>
+        </template>
+      </div>
+      <div x-show="satellites.length === 0" class="s365-detail-empty">No satellite data</div>
+
+      <!-- Constellation summary -->
+      <div class="s365-constellation-summary" x-show="satellites.length > 0">
+        <template x-for="c in constellationSummary" :key="c.name">
+          <span class="s365-const-badge" :class="c.cls">
+            <span x-text="c.name"></span>: <strong x-text="c.used + '/' + c.total"></strong>
+          </span>
+        </template>
+      </div>
+    </div>
+
+    <!-- Services -->
+    <div class="s365-detail-section">
+      <div class="s365-detail-title">Services</div>
+      <div class="s365-detail-grid">
+        <span class="s365-detail-label">TCP Stream</span>
+        <span class="s365-svc-badge" :class="services.str2str_tcp ? 'active' : 'inactive'"
+              x-text="services.str2str_tcp ? 'Running' : 'Stopped'"></span>
+        <span class="s365-detail-label">NTRIP Out</span>
+        <span class="s365-svc-badge" :class="services.str2str_ntrip_A ? 'active' : 'inactive'"
+              x-text="services.str2str_ntrip_A ? 'Running' : 'Stopped'"></span>
+        <span class="s365-detail-label">Local Caster</span>
+        <span class="s365-svc-badge" :class="services.str2str_local_ntrip_caster ? 'active' : 'inactive'"
+              x-text="services.str2str_local_ntrip_caster ? 'Running' : 'Stopped'"></span>
+      </div>
     </div>
   </div>
 
