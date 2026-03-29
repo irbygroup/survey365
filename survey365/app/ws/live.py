@@ -129,24 +129,28 @@ async def websocket_live(ws: WebSocket):
             while True:
                 msg = await queue.get()
                 await ws.send_text(msg)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("WS sender error: %s: %s", type(exc).__name__, exc)
 
     async def receiver():
         """Read client messages."""
         try:
             while True:
-                raw = await ws.receive_text()
-                try:
-                    msg = json.loads(raw)
-                except json.JSONDecodeError:
-                    continue
-                if msg.get("type") == "ping":
-                    queue.put_nowait(json.dumps({"type": "pong"}))
+                data = await ws.receive()
+                if data["type"] == "websocket.disconnect":
+                    break
+                if data["type"] == "websocket.receive":
+                    raw = data.get("text", "")
+                    try:
+                        msg = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if msg.get("type") == "ping":
+                        queue.put_nowait(json.dumps({"type": "pong"}))
         except WebSocketDisconnect:
             pass
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("WS receiver error: %s: %s", type(exc).__name__, exc)
 
     sender_task = asyncio.create_task(sender())
     receiver_task = asyncio.create_task(receiver())
