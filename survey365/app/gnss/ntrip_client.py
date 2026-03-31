@@ -9,6 +9,7 @@ corrections into the GNSSManager for injection into the receiver.
 import asyncio
 import base64
 import logging
+from collections.abc import Awaitable, Callable
 
 logger = logging.getLogger("survey365.gnss.ntrip_client")
 
@@ -23,8 +24,8 @@ class NTRIPClient:
         mountpoint: str,
         username: str = "",
         password: str = "",
-        on_rtcm: callable | None = None,
-        gga_provider: callable | None = None,
+        on_rtcm: Callable[[bytes], Awaitable[None]] | None = None,
+        gga_provider: Callable[[], Awaitable[str | None]] | None = None,
     ):
         """
         Args:
