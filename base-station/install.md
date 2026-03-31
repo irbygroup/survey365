@@ -1,4 +1,4 @@
-# RTK Base Station Pi — Install Guide
+# Survey365 Base Station Pi — Install Guide
 
 ## Hardware
 
@@ -7,10 +7,10 @@
 | Board | Raspberry Pi 4 Model B Rev 1.5 |
 | OS | Debian GNU/Linux 13 (trixie) aarch64 |
 | Kernel | 6.12.47+rpt-rpi-v8 |
-| Hostname | `rtkbase-pi` |
+| Hostname | `<pi-host>` |
 | Local IP | 192.168.1.162 (wlan0), 192.168.1.110 (wlan1) |
 | Tailscale IP | 100.68.19.26 |
-| Tailscale hostname | `rtkbase-pi.alligator-perch.ts.net` |
+| Tailscale hostname | `<pi-host>.alligator-perch.ts.net` |
 | Tailscale tag | `tag:rtksurveying` |
 | Modem | Waveshare SIM7600G-H 4G USB Dongle |
 | Modem USB ID | `1e0e:9001` (SimTech) |
@@ -24,9 +24,7 @@
 | GNSS serial port | `/dev/ttyGNSS` (symlink to `/dev/ttyACM0`) |
 | F9P firmware | 1.32 |
 | GNSS Antenna | ArduSimple Calibrated Survey Tripleband + L-band (IP67) |
-| RTKBase version | 2.7.0 |
-| RTKBase web UI | `http://100.68.19.26` (Tailscale) or `http://192.168.1.162` (LAN) |
-| RTKBase password | `admin` (default — change this) |
+| Survey365 UI | `https://<pi-host>.alligator-perch.ts.net` or `http://192.168.1.162` |
 
 ## Initial Setup
 
@@ -46,7 +44,7 @@ sudo raspi-config
 
 ```bash
 curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up --authkey=<YOUR_AUTH_KEY> --hostname=rtkbase-pi
+sudo tailscale up --authkey=<YOUR_AUTH_KEY> --hostname=<pi-host>
 sudo tailscale set --ssh
 sudo systemctl enable tailscaled
 ```
@@ -68,7 +66,7 @@ chmod 600 ~/.ssh/authorized_keys
 
 Connect from either Mac:
 ```bash
-ssh jaredirby@rtkbase-pi
+ssh jaredirby@<pi-host>
 ```
 
 ### 4. Fix Locale
@@ -131,7 +129,7 @@ Both adapters connect to all configured networks. The Alfa USB adapter (wlan1) i
 
 ### Configuration
 
-All WiFi networks are defined in `rtkbase.conf` as `WIFI_<n>` entries:
+All WiFi networks are defined in `station.conf` as `WIFI_<n>` entries:
 
 ```
 WIFI_1=TranquilityHarbor|<psk>|20|50
@@ -151,7 +149,7 @@ git pull
 sudo bash base-station/setup-wifi.sh
 ```
 
-The script is safe to re-run — it deletes old `rtk-` connections before recreating. To add a new network, add a `WIFI_<n>` line to `rtkbase.conf` and re-run.
+The script is safe to re-run — it deletes old `rtk-` connections before recreating. To add a new network, add a `WIFI_<n>` line to `station.conf` and re-run.
 
 ## SIM7600G-H Modem — IMEI Setup
 
@@ -172,7 +170,7 @@ The IMEI generator script is at `base-station/imei-generator/generate.py`. It us
 
 ```bash
 cd ~/rtk-surveying/base-station
-source <(grep '^IMEI_' rtkbase.conf | sed 's/^/export /')
+source <(grep '^IMEI_' station.conf | sed 's/^/export /')
 python3 imei-generator/generate.py --quiet
 ```
 
@@ -196,91 +194,59 @@ sudo systemctl start ModemManager
 sudo mmcli -m 0 | grep imei  # verify
 ```
 
-The IMEI persists across power cycles (stored in modem NV memory). Save the original and new IMEI in `rtkbase.conf`.
+The IMEI persists across power cycles (stored in modem NV memory). Save the original and new IMEI in `station.conf`.
 
-## RTKBase — GNSS Base Station Software
+## Survey365 Native GNSS Stack
 
-RTKBase provides a web UI for managing the F9P receiver, streaming RTCM corrections, and logging raw GNSS data.
+Survey365 now owns the GNSS receiver directly. There is no separate base-station UI or relay service layer.
 
 ### Install
 
 ```bash
-cd ~
-wget https://raw.githubusercontent.com/Stefal/rtkbase/master/tools/install.sh -O install.sh
-chmod +x install.sh
-sudo ./install.sh --user=jaredirby --all release
+cd ~/rtk-surveying
+sudo bash survey365/install.sh --user=jaredirby
 ```
 
-The `--user` flag is required when running over non-interactive SSH (e.g., Tailscale SSH). The install takes ~5 minutes and handles dependencies, RTKLIB compilation, Python venv, systemd services, gpsd/chrony, and F9P detection/configuration.
+The installer creates the Python environment, initializes the database, deploys the `/dev/ttyGNSS` udev rule, installs nginx and systemd units, and grants serial access via the `dialout` group.
 
-### Enable Antenna Voltage (required)
+### Receiver Startup
 
-The RTKBase install script does **not** enable active antenna voltage on the F9P. Without this, the tripleband antenna gets no power and the receiver sees zero satellites.
-
-```bash
-sudo systemctl stop str2str_tcp
-python3 -c "
-import serial, struct, time
-s = serial.Serial('/dev/ttyGNSS', 115200, timeout=2)
-def ubx_msg(cls, mid, payload=b''):
-    msg = bytearray([0xB5, 0x62, cls, mid]) + struct.pack('<H', len(payload)) + payload
-    ck_a = ck_b = 0
-    for b in msg[2:]:
-        ck_a = (ck_a + b) & 0xFF
-        ck_b = (ck_b + ck_a) & 0xFF
-    return bytes(msg) + bytes([ck_a, ck_b])
-# Enable antenna voltage control + short/open detection, save to RAM+BBR+Flash
-valset = struct.pack('<BBH', 0, 0x07, 0)
-valset += struct.pack('<I', 0x10A3002E) + bytes([1])  # ANT_CFG_VOLTCTRL
-valset += struct.pack('<I', 0x10A3002F) + bytes([1])  # ANT_CFG_SHORTDET
-valset += struct.pack('<I', 0x10A30030) + bytes([1])  # ANT_CFG_OPENDET
-s.write(ubx_msg(0x06, 0x8A, valset))
-time.sleep(1)
-print(s.read(s.in_waiting))
-s.close()
-"
-sudo systemctl start str2str_tcp
-```
-
-This persists across power cycles (saved to F9P flash). Only needs to be run once.
-
-**Warning:** If you ever re-run `./install.sh --configure-gnss`, it factory-resets the F9P and you must re-run this antenna voltage command.
+- Antenna voltage is enabled automatically by Survey365 on startup.
+- The F9P is read directly from `/dev/ttyGNSS` at the configured baud rate.
+- Base mode, RTCM output, local caster, outbound NTRIP push, and raw logging are all controlled from Survey365.
 
 ### Services
 
 | Service | Purpose | Enabled |
 |---------|---------|---------|
-| `rtkbase_web` | Web UI on port 80 | yes (boot) |
-| `str2str_tcp` | F9P serial → TCP :5015 relay | yes (boot) |
-| `gpsd` | GNSS time source | yes (boot) |
-| `chrony` | NTP sync from GNSS | yes (boot) |
-| `rtkbase_archive.timer` | Daily RINEX compression + cleanup | yes (boot) |
-| `str2str_ntrip_A` | NTRIP caster output (Emlid Caster) | not yet configured |
-| `str2str_local_ntrip_caster` | Local NTRIP caster on Pi | not yet configured |
+| `survey365` | FastAPI app, native GNSS manager, WebSocket/status API | yes (boot) |
+| `survey365-boot` | Hardware check before app startup | yes (boot) |
+| `nginx` | Reverse proxy for Survey365 | yes (boot) |
+| `tailscaled` | Remote access over Tailscale | yes (boot) |
 
 ### Field Workflow
 
 1. Set up tripod over a known point (PK nail, monument, benchmark)
-2. Power on — Pi boots, F9P locks satellites, RTKBase starts automatically
-3. Open web UI → Settings → enter known coordinates in the **Position** field
-4. Enable NTRIP output → Emlid Reach RX connects and receives corrections
+2. Power on — Pi boots, F9P locks satellites, Survey365 starts automatically
+3. Open Survey365 → start Known Point Base or Relative Base
+4. Connect rovers through the configured NTRIP outputs
 
 For a new site without known coordinates:
 1. Let the base log raw data for 2-6 hours
-2. Download RINEX from the RTKBase logs page
+2. Download raw logs from Survey365's RINEX data directory
 3. Submit to OPUS (opus.ngs.noaa.gov) → ~2cm absolute coordinates
 4. Drive a PK nail, record the OPUS coords — now it's a known point
 
 ### Configuration
 
-Settings file: `~/rtkbase/settings.conf`
+Survey365 stores runtime config in `survey365/data/survey365.db`:
+- GNSS connection: `gnss_port`, `gnss_baud`, `gnss_backend`
+- RTCM output selection: `rtcm_messages`
+- Raw logging: `rinex_enabled`, `rinex_rotate_hours`, `rinex_data_dir`
+- Local caster: `local_caster_enabled`, `local_caster_port`, `local_caster_mountpoint`
+- Remote caster profiles: `ntrip_profiles`
 
-Key fields to configure:
-- `position` — base coordinates (lat lon height)
-- `svr_addr_a` / `svr_port_a` / `svr_pwd_a` / `mnt_name_a` — Emlid Caster NTRIP credentials
-- `local_ntripc_port` / `local_ntripc_mnt_name` / `local_ntripc_pwd` — local NTRIP caster
-
-Data directory: `~/rtkbase/data/` (raw GNSS logs, auto-archived daily)
+Data directory: `survey365/data/rinex/`
 
 ## Network Interfaces
 
@@ -296,11 +262,11 @@ Data directory: `~/rtkbase/data/` (raw GNSS logs, auto-archived daily)
 
 ```
 base-station/
-  rtkbase.conf              # All config: modem, IMEI API, WiFi networks
-  setup-wifi.sh             # Configure WiFi from rtkbase.conf
+  station.conf              # Device config: modem, IMEI API, WiFi networks
+  setup-wifi.sh             # Configure WiFi from station.conf
   call-test.py              # Voice call test — plays Twinkle Twinkle over SIM7600
   install.md                # This file
-  RTK-Base-Station-Final-Shopping-List.md
+  Base-Station-Final-Shopping-List.md
   imei-generator/
     generate.py             # IMEI generator (from sim7600-dongle-gateway)
     tac-models.json         # TAC database for US budget phones
@@ -308,9 +274,10 @@ base-station/
 
 On the Pi:
 ```
-~/rtkbase/                  # RTKBase installation (managed by RTKBase, not this repo)
-  settings.conf             # RTKBase settings (base position, NTRIP, services)
-  data/                     # Raw GNSS logs (auto-archived daily)
-  logs/                     # str2str and service logs
-  venv/                     # Python virtual environment
+~/rtk-surveying/
+  survey365/                # Native Survey365 app
+    data/
+      survey365.db          # SQLite config + point database
+      rinex/                # Raw GNSS logs
+    venv/                   # Python virtual environment
 ```

@@ -1,4 +1,4 @@
-# RTK Base Station — Final Shopping List
+# Base Station — Final Shopping List
 ## Starting From Zero — Everything You Need
 
 ---
@@ -14,7 +14,7 @@
 | | **ArduSimple Total** | | **€378** | **~$409** |
 
 **Why these choices:**
-- F9P board: best RTKBase integration, most mature ecosystem, auto-detected by RTKBase
+- F9P board: mature ecosystem, strong Linux support, and direct serial control
 - Tripleband antenna: NGS-calibrated, 5/8" thread screws directly onto survey tripod, IP67 weatherproof, 1.5m cable with TNC-to-SMA (plugs straight into the F9P). Future-proofed for L5/E6 if you ever upgrade to a UM980 board or rover. This is the last antenna you'll buy.
 - The antenna cable SMA male plugs directly into the F9P board SMA female. No adapters needed.
 
@@ -27,8 +27,8 @@
 
 | # | Item | ~USD | Notes |
 |---|------|------|-------|
-| 4 | **Raspberry Pi 4 Model B (2GB RAM)** | $45 | The sweet spot — 4 USB ports, low power draw, handles RTKBase with ease. Buy from CanaKit, Vilros, or official Pi reseller. |
-| 5 | **Samsung EVO Select 64GB microSD** | $10 | For Pi OS + RTKBase. 64GB gives weeks of raw GNSS data logging before rotation. |
+| 4 | **Raspberry Pi 4 Model B (2GB RAM)** | $45 | The sweet spot — 4 USB ports, low power draw, handles Survey365 with ease. Buy from CanaKit, Vilros, or official Pi reseller. |
+| 5 | **Samsung EVO Select 64GB microSD** | $10 | For Pi OS + Survey365. 64GB gives weeks of raw GNSS data logging before rotation. |
 | 6 | **Raspberry Pi 4 aluminum heatsink set** | $3 | Passive cooling. Essential for a sealed case in Alabama summer heat. Get the set that covers CPU + RAM + USB controller. |
 | 7 | **Raspberry Pi 4 USB-C power supply** | $8 | For bench setup/testing at home only. In the field you'll run off the power bank. |
 
@@ -90,7 +90,7 @@
 
 | # | Item | Cost | URL |
 |---|------|------|-----|
-| 28 | **RTKBase** (base station software) | Free | github.com/Stefal/rtkbase |
+| 28 | **Survey365** (native base station software) | Free | github.com/irbygroup/rtk-surveying |
 | 29 | **Emlid Caster** (cloud NTRIP relay) | Free | caster.emlid.com |
 | 30 | **ALDOT CORS** (Alabama free RTK network) | Free | aldotcors.dot.state.al.us |
 | 31 | **NGS OPUS** (precise base positioning) | Free | opus.ngs.noaa.gov |
@@ -140,7 +140,7 @@
 | **Skid steer grading** | Second simpleRTK2B Budget + ANN-MB-00 antenna + Windows tablet + USB cable | ~$450 |
 | **LoRa radio link** | ArduSimple LR radio pair (XBee format, one for base, one for machine) | ~$130 |
 | **DIY survey rover** | Third simpleRTK2B (or RTK3B UM980) + survey antenna + BT+BLE Bridge + survey pole | ~$500-600 |
-| **Permanent shop base** | Pi Zero 2W + F9P + antenna + PoE + mount (the RTKBase recommended setup) | ~$300 |
+| **Permanent shop base** | Pi Zero 2W + F9P + antenna + PoE + mount | ~$300 |
 
 All future additions plug into the same base station you're building now. No rework, no replacement — just expansion.
 
@@ -191,7 +191,7 @@ All future additions plug into the same base station you're building now. No rew
 
 ## FIRST BOOT CHECKLIST
 
-1. □ Flash RTKBase image to SD card with balenaEtcher
+1. □ Flash Raspberry Pi OS to SD card with balenaEtcher
 2. □ Mount Pi 4 on standoffs on mounting plate
 3. □ Attach heatsink to Pi
 4. □ Connect F9P to Pi via USB-C cable
@@ -199,10 +199,10 @@ All future additions plug into the same base station you're building now. No rew
 6. □ Connect Alfa adapter to Pi USB
 7. □ Wire SMA jumpers from bulkheads to each device
 8. □ Boot Pi, connect to its WiFi hotspot from phone
-9. □ Open http://rtkbase.local — change password from "admin"
-10. □ Verify satellite reception (green bars in status page)
-11. □ Configure Emlid Caster credentials in NTRIP Server A
-12. □ Enable Local NTRIP Caster service
+9. □ Install and start Survey365 on the Pi
+10. □ Verify satellite reception in the Survey365 status view
+11. □ Add outbound caster credentials in Survey365 NTRIP profiles
+12. □ Enable the local caster in Survey365 config if needed
 13. □ Configure WiFi hotspot on the Alfa adapter
 14. □ Register for ALDOT CORS (aldotcors.dot.state.al.us)
 15. □ Add NTRIP profiles in Emlid Flow:

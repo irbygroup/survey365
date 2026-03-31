@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# setup-wifi.sh — Configure WiFi networks on rtkbase-pi from rtkbase.conf
+# setup-wifi.sh — Configure WiFi networks on the Pi from station.conf
 # Assigns each network to both wlan0 (internal, fallback) and wlan1 (Alfa USB, preferred).
 # Safe to re-run: deletes old managed connections before recreating.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONF="$SCRIPT_DIR/rtkbase.conf"
+CONF="$SCRIPT_DIR/station.conf"
 WLAN0_METRIC_BUMP=550
 PREFIX="rtk-"
 
@@ -25,7 +25,7 @@ wifi_lines() {
   grep '^WIFI_[0-9]*=' "$CONF" | sed 's/^WIFI_[0-9]*=//'
 }
 
-# Delete all previous rtk- managed connections
+# Delete all previous managed connections
 echo "Cleaning old rtk- connections..."
 nmcli -t -f NAME connection show | { grep "^${PREFIX}" || true; } | while IFS= read -r name; do
   echo "  Removing: $name"
@@ -102,13 +102,13 @@ wifi_lines | sort -t'|' -k3 -rn | while IFS='|' read -r ssid psk priority metric
   if nmcli connection up "$con_name" 2>/dev/null; then
     echo "  wlan1 connected: $ssid"
     # Signal success by touching a temp file (subshell can't set parent vars)
-    touch /tmp/.rtk-wifi-activated
+    touch /tmp/.survey365-wifi-activated
     break
   fi
 done
 
-if [[ -f /tmp/.rtk-wifi-activated ]]; then
-  rm -f /tmp/.rtk-wifi-activated
+if [[ -f /tmp/.survey365-wifi-activated ]]; then
+  rm -f /tmp/.survey365-wifi-activated
 else
   echo "  wlan1: no configured network in range (will auto-connect when available)"
 fi

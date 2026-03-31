@@ -9,8 +9,8 @@ RTK GNSS base station system running on a Raspberry Pi 4. Two main components:
 
 ## Pi Access
 
-- **SSH**: `ssh jaredirby@rtkbase-pi` (Tailscale) or `ssh jaredirby@192.168.1.162` (LAN)
-- **Web UI**: `https://rtkbase-pi.alligator-perch.ts.net` (Tailscale HTTPS via `tailscale serve`)
+- **SSH**: `ssh jaredirby@<pi-host>` (Tailscale) or `ssh jaredirby@192.168.1.162` (LAN)
+- **Web UI**: `https://<pi-host>.alligator-perch.ts.net` (Tailscale HTTPS via `tailscale serve`)
 - **Direct IPs**: `100.68.19.26` (Tailscale), `192.168.1.162` (wlan0), `192.168.1.110` (wlan1)
 
 ## Deploy to Pi
@@ -21,7 +21,7 @@ cd ~/rtk-surveying
 bash survey365/scripts/update.sh
 
 # Or remotely:
-ssh jaredirby@rtkbase-pi "cd ~/rtk-surveying && bash survey365/scripts/update.sh"
+ssh jaredirby@<pi-host> "cd ~/rtk-surveying && bash survey365/scripts/update.sh"
 ```
 
 The update script: git pulls, installs pip deps if changed, stamps cache version into HTML, restarts the service.
@@ -29,7 +29,7 @@ The update script: git pulls, installs pip deps if changed, stamps cache version
 ## First-Time Install
 
 ```bash
-ssh jaredirby@rtkbase-pi
+ssh jaredirby@<pi-host>
 cd ~/rtk-surveying
 sudo bash survey365/install.sh --user=jaredirby
 ```

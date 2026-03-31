@@ -2,7 +2,7 @@
 
 ## Overview
 
-Survey365 is a field operations controller for RTK GNSS base stations. It runs on a Raspberry Pi alongside RTKBase, providing a map-centric mobile UI for field crews to operate in base station or rover modes, manage known points, track multiple rovers in real-time, and control all device infrastructure (WiFi, cellular modem, hotspot, remote access).
+Survey365 is a field operations controller for RTK GNSS base stations. It runs on a Raspberry Pi with native GNSS control, providing a map-centric mobile UI for field crews to operate in base station or rover modes, manage known points, track multiple rovers in real-time, and control all device infrastructure (WiFi, cellular modem, hotspot, remote access).
 
 The primary interface is a full-screen map. Everything else is secondary.
 
@@ -46,7 +46,7 @@ The primary interface is a full-screen map. Everything else is secondary.
 | Real-time | **WebSocket** (via FastAPI) | Live satellite status, rover positions, mode transitions |
 | File parsing | **GDAL/OGR** (KML, DXF, DWG, GeoJSON, Shapefile) | Industry-standard geospatial format support |
 | Reverse proxy | **Nginx** | Routes: / → Survey365 |
-| GNSS control | **Native** (pyubx2 + pyserial) | Direct F9P/LG290P serial control, no RTKBase dependency |
+| GNSS control | **Native** (pyubx2 + pyserial) | Direct F9P/LG290P serial control with no external relay layer |
 | Rover engine | **RTKLIB rtkrcv** | Rover positioning for CORS establish mode |
 | Remote access | **Cloudflare Tunnel** (cloudflared) | Public HTTPS URL, no client install needed |
 | Process mgmt | **systemd** | All services as units, boot automation |
@@ -158,11 +158,11 @@ The map is the home screen. It fills the viewport. Everything else floats on top
 **Flow:**
 1. User taps a saved point on the map (or picks from list sorted by proximity)
 2. Confirm: "Start base at [point name]?"
-3. System writes coordinates to RTKBase settings.conf
-4. Restarts str2str + NTRIP services
+3. System configures the receiver directly over serial
+4. Survey365 starts native RTCM outputs and optional NTRIP publishing
 5. Map shows base marker (green), status strip shows "Broadcasting"
 
-**Services active:** str2str_tcp, str2str_ntrip_A (Emlid Caster), str2str_local_ntrip_caster, str2str_file (RINEX logging)
+**Components active:** native GNSS manager, RTCM fan-out, RINEX logging, local caster, optional outbound caster push
 
 ### Mode 2: CORS Establish → Base
 
@@ -179,8 +179,8 @@ The map is the home screen. It fills the viewport. Everything else floats on top
 8. System saves to DB → switches to Known Point Base mode
 9. Map marker turns green → "Broadcasting from [name]"
 
-**Services active during establish:** str2str_tcp, rtkrcv (rover mode)
-**Services active after establish:** same as Mode 1
+**Components active during establish:** native GNSS manager, NTRIP client, averaging workflow
+**Components active after establish:** same as Mode 1
 
 ### Mode 3: OPUS Establish → Base
 
@@ -243,7 +243,7 @@ Rovers (Emlid Reach RX, other NTRIP clients) connect to the base station's NTRIP
 
 **Tracking methods (in priority order):**
 
-1. **NTRIP client connections** — RTKBase's local NTRIP caster logs connected clients (IP + mount point). Survey365 reads this to know how many rovers are connected. No position data from this method alone.
+1. **NTRIP client connections** — Survey365's native local NTRIP caster tracks connected clients (IP + mount point). This gives rover counts even when position reporting is unavailable.
 
 2. **Rover position reporting** — Rovers that can output NMEA on a TCP port (Reach RX supports this). Survey365 connects to each rover's NMEA stream to get real-time position. Requires rovers to be on the same network (hotspot).
 
@@ -474,7 +474,7 @@ hotspot:
 
 ### Features
 
-- View all configured networks (from rtkbase.conf WIFI_n entries)
+- View all configured networks (from `base-station/station.conf` `WIFI_n` entries)
 - Add new network: SSID, password, priority, metric
 - Remove network
 - View connection status per adapter (wlan0, wlan1)
@@ -486,7 +486,7 @@ hotspot:
 
 | Field | Source |
 |-------|--------|
-| SSID | rtkbase.conf |
+| SSID | station.conf |
 | Connected | nmcli device status |
 | Signal | nmcli -f SSID,SIGNAL device wifi list |
 | Interface | wlan0 / wlan1 |
@@ -506,7 +506,7 @@ hotspot:
 | Network type (LTE/3G) | mmcli -m 0 |
 | SIM status | mmcli -i 0 |
 | IMEI (current) | mmcli -m 0 \| grep imei |
-| IMEI (original) | rtkbase.conf ORIGINAL_IMEI |
+| IMEI (original) | station.conf `ORIGINAL_IMEI` |
 | Generate new IMEI | Run imei-generator/generate.py |
 | Set IMEI on modem | AT+SIMEI=xxx via serial |
 | APN settings | mmcli -m 0 --simple-connect |
@@ -567,7 +567,6 @@ git log HEAD..origin/main --oneline  →  show commit list
 git pull origin main
 pip install -r requirements.txt  (if changed)
 systemctl restart survey365
-systemctl restart rtkbase_web  (if needed)
     |
     v
 Page auto-reconnects → "Updated to [commit hash]"
@@ -584,7 +583,7 @@ On every boot, before starting Survey365:
 
 | Action | Command | Confirmation |
 |--------|---------|-------------|
-| Restart services | systemctl restart survey365 rtkbase_web str2str_tcp | "Restarting... reconnecting in 5s" |
+| Restart services | systemctl restart survey365 | "Restarting... reconnecting in 5s" |
 | Reboot device | sudo reboot | "Reboot? You'll reconnect in ~30 seconds." |
 | Shut down | sudo shutdown now | "Shut down? You'll need physical access to power back on." |
 
@@ -596,7 +595,6 @@ Disk: 4.5 GB / 59 GB (8%)
 RAM: 253 MB / 3.7 GB
 Uptime: 4 days, 7 hours
 Battery: ~4.2 hours remaining (estimated)
-RTKBase: v2.7.0
 Survey365: v0.1.0 (commit abc1234)
 Last update: 2026-03-28 14:22
 ```
@@ -607,7 +605,7 @@ Last update: 2026-03-28 14:22
 
 Everything that would otherwise require SSH is accessible from the admin panel.
 
-### GNSS / RTKBase
+### GNSS / Base Station
 
 - Base position (manual entry or select from saved point)
 - Receiver settings (port, baud rate, format)
@@ -681,13 +679,12 @@ On power-on, the following happens automatically (systemd):
 3. ModemManager connects cell modem
 4. Tailscale connects
 5. cloudflared connects tunnel
-6. RTKBase starts (str2str_tcp, rtkbase_web)
-7. **Survey365 starts:**
+6. **Survey365 starts:**
    a. Enable F9P antenna voltage (UBX-CFG-VALSET)
    b. Load last session from database
    c. If auto-resume enabled: start last mode
    d. Else: wait on map screen (IDLE)
-8. **Within 30-60 seconds of power-on:** satellites locked, corrections flowing (if auto-resume)
+7. **Within 30-60 seconds of power-on:** satellites locked, corrections flowing (if auto-resume)
 
 ---
 
@@ -899,7 +896,7 @@ CREATE TABLE rovers (
     color           TEXT
 );
 
--- WiFi networks (mirror of rtkbase.conf WIFI_n entries)
+-- WiFi networks (mirror of station.conf WIFI_n entries)
 CREATE TABLE wifi_networks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     ssid            TEXT NOT NULL,
@@ -930,7 +927,7 @@ CREATE TABLE config (
 | Phase | Scope | Outcome |
 |-------|-------|---------|
 | **1** | Map UI + status + known point base + relative base + point DB + project organization + simple password auth | Field-usable base station with map interface. Project gate, switcher, project-scoped sites/sessions. **DONE.** |
-| **2** | Remove RTKBase dependency + native GNSS control + NTRIP client/server + CORS establish mode | Direct F9P serial control, RTCM3 fan-out, NTRIP profiles, ALDOT CORS establish. See `RTKBASE-REMOVAL-PLAN.md`. |
+| **2** | Native GNSS control + NTRIP client/server + CORS establish mode | Direct F9P serial control, RTCM3 fan-out, NTRIP profiles, ALDOT CORS establish. See `RTKBASE-REMOVAL-PLAN.md`. |
 | **3** | File import (KML/DXF/DWG/GeoJSON/SHP) + layer management | Site plans and design files on the map |
 | **4** | OPUS pipeline (auto-trim RINEX + submit + result import) | Survey-grade accuracy automation |
 | **5** | Admin panel (WiFi, modem, IMEI, system health, config) | Complete device management from browser |
@@ -1031,7 +1028,7 @@ survey365/
 
 | Constraint | Detail |
 |------------|--------|
-| RAM | 2GB shared with RTKBase, OS, services. Target <200MB for Survey365. |
+| RAM | 2GB shared with the OS, network stack, and field services. Target <200MB for Survey365. |
 | CPU | Pi 4 quad-core ARM. Avoid heavy computation. GDAL file parsing is the heaviest operation. |
 | Storage | 59GB SD card. RINEX logs are the main consumer (~50MB/day). |
 | Network | Cell modem may be slow/unreliable. All UI assets must be bundled locally. No CDN. |
