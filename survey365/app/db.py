@@ -188,6 +188,33 @@ async def init_db():
                     except Exception:
                         pass
 
+        # --- Migration 005: Normalize seeded ALDOT CORS profiles on upgraded DBs ---
+        cursor = await db.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN name IN (
+                    'ALDOT CORS - Mobile',
+                    'ALDOT CORS - Daphne',
+                    'ALDOT CORS - Evergreen'
+                ) THEN 1 ELSE 0 END) AS desired
+            FROM ntrip_profiles
+            WHERE type = 'inbound_cors' AND name LIKE 'ALDOT CORS%'
+            """
+        )
+        row = await cursor.fetchone()
+        total = int(row["total"] or 0)
+        desired = int(row["desired"] or 0)
+        if total != 3 or desired != 3:
+            migration_file = MIGRATIONS_DIR / "005_aldot_cors_normalize.sql"
+            if migration_file.exists():
+                sql = migration_file.read_text()
+                for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+                    try:
+                        await db.execute(stmt)
+                    except Exception:
+                        pass
+
         await db.commit()
 
 
