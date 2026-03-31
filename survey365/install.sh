@@ -30,6 +30,26 @@ warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die()   { err "$*"; exit 1; }
 
+service_state() {
+    local state
+    state=$(systemctl is-active "$1" 2>/dev/null || true)
+    if [[ -n "$state" ]]; then
+        echo "$state"
+    else
+        echo "unknown"
+    fi
+}
+
+unit_enabled() {
+    local state
+    state=$(systemctl is-enabled "$1" 2>/dev/null || true)
+    if [[ -n "$state" ]]; then
+        echo "$state"
+    else
+        echo "unknown"
+    fi
+}
+
 # ── Root check ──────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
     die "This script must be run as root. Use: sudo bash install.sh"
@@ -276,7 +296,7 @@ info "Enabling and starting services..."
 
 systemctl enable survey365.service
 systemctl enable survey365-boot.service
-systemctl enable survey365-update.timer
+systemctl enable --now survey365-update.timer
 
 if systemctl is-active --quiet survey365 2>/dev/null; then
     systemctl restart survey365
@@ -312,11 +332,11 @@ done
 
 echo ""
 echo -e "  ${BLUE}Services:${NC}"
-echo -e "    survey365:       $(systemctl is-active survey365 2>/dev/null || echo 'unknown')"
-echo -e "    survey365-boot:  $(systemctl is-active survey365-boot 2>/dev/null || echo 'unknown')"
-echo -e "    survey365-update: $(systemctl is-active survey365-update 2>/dev/null || echo 'unknown')"
-echo -e "    survey365-update.timer: $(systemctl is-active survey365-update.timer 2>/dev/null || echo 'unknown')"
-echo -e "    nginx:           $(systemctl is-active nginx 2>/dev/null || echo 'unknown')"
+echo -e "    survey365:          $(service_state survey365)"
+echo -e "    survey365-boot:     $(service_state survey365-boot)"
+echo -e "    survey365-update:   $(service_state survey365-update)"
+echo -e "    survey365-update.timer: $(service_state survey365-update.timer) ($(unit_enabled survey365-update.timer))"
+echo -e "    nginx:              $(service_state nginx)"
 echo ""
 echo -e "  ${BLUE}Logs:${NC}"
 echo "    journalctl -u survey365 -f"
