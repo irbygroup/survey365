@@ -98,6 +98,12 @@ function survey365App() {
     confirmSite: null,
 
     /* ---------------------------------------------------------------
+     * CORS Establish
+     * --------------------------------------------------------------- */
+    showCorsPanel: false,
+    corsProfiles: [],
+
+    /* ---------------------------------------------------------------
      * Establish Progress
      * --------------------------------------------------------------- */
     establishing: false,
@@ -105,6 +111,10 @@ function survey365App() {
     establishTotal: 120,
     establishSamples: 0,
     showEstablishPanel: false,
+    establishPhase: '',
+    establishRtkQuality: '',
+    establishAccuracy: 0,
+    establishNtripConnected: false,
 
     /* ---------------------------------------------------------------
      * Status Detail Panel
@@ -187,6 +197,11 @@ function survey365App() {
       });
       document.addEventListener('s365:establish_progress', function (e) {
         self._onEstablishProgress(e.detail);
+      });
+      document.addEventListener('s365:establish_error', function (e) {
+        self.establishing = false;
+        self.showEstablishPanel = false;
+        self.showToast(e.detail.message || 'Establish failed', 'error');
       });
       document.addEventListener('s365:ws-connection', function (e) {
         self.wsConnected = e.detail.connected;
@@ -501,8 +516,14 @@ function survey365App() {
       this.establishTotal = msg.total_seconds || 120;
       this.establishSamples = msg.samples || 0;
 
+      /* CORS-specific fields */
+      this.establishPhase = msg.phase || '';
+      this.establishRtkQuality = msg.rtk_quality || '';
+      this.establishAccuracy = msg.accuracy_h || 0;
+      this.establishNtripConnected = msg.ntrip_connected || false;
+
       /* Check if complete */
-      if (this.establishElapsed >= this.establishTotal) {
+      if (this.establishPhase !== 'waiting_fix' && this.establishPhase !== 'averaging' && this.establishElapsed >= this.establishTotal) {
         this.establishing = false;
         this.showEstablishPanel = false;
       }
@@ -556,6 +577,62 @@ function survey365App() {
     /* ---------------------------------------------------------------
      * Mode Panel Actions
      * --------------------------------------------------------------- */
+
+    /* ---------------------------------------------------------------
+     * CORS Establish Actions
+     * --------------------------------------------------------------- */
+
+    async openCorsEstablish() {
+      try {
+        var res = await fetch('/api/ntrip');
+        if (res.ok) {
+          var data = await res.json();
+          this.corsProfiles = (data.profiles || []).filter(function (p) {
+            return p.type === 'inbound_cors';
+          });
+        }
+      } catch (_) {
+        this.corsProfiles = [];
+      }
+      if (this.corsProfiles.length === 0) {
+        this.showToast('No CORS profiles configured. Add one in Settings.', 'warning');
+        return;
+      }
+      this.showCorsPanel = true;
+    },
+
+    async selectCorsProfile(profile) {
+      this.showCorsPanel = false;
+      try {
+        var res = await fetch('/api/mode/cors-establish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            profile_id: profile.id,
+            averaging_seconds: 60,
+            rtk_timeout_seconds: 120
+          })
+        });
+
+        if (res.ok) {
+          this.establishing = true;
+          this.showEstablishPanel = true;
+          this.establishElapsed = 0;
+          this.establishTotal = 120;
+          this.establishSamples = 0;
+          this.establishPhase = 'connecting';
+          this.establishRtkQuality = '';
+          this.establishAccuracy = 0;
+          this.establishNtripConnected = false;
+          this.showToast('Connecting to ' + profile.name + '...', 'info');
+        } else {
+          var err = await res.json().catch(function () { return {}; });
+          this.showToast(err.detail || 'Failed to start CORS establish', 'error');
+        }
+      } catch (err) {
+        this.showToast('Network error: ' + err.message, 'error');
+      }
+    },
 
     /* Open mode panel with site list for known-point selection */
     openModePanel() {

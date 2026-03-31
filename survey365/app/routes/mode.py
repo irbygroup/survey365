@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from ..db import get_active_project_id, get_db
 from ..gnss import gnss_manager, gnss_state
 from ..gnss.base_station import start_base, stop_base
+from ..gnss.ntrip_client import NTRIPClient
 from ..ws.live import broadcast_event
 
 logger = logging.getLogger("survey365.mode")
@@ -33,6 +34,7 @@ _session_started_at: str | None = None
 _establishing: bool = False
 _establish_progress: dict | None = None
 _establish_task: asyncio.Task | None = None
+_cors_ntrip_client: NTRIPClient | None = None
 
 
 def get_mode_state() -> dict:
@@ -42,6 +44,14 @@ def get_mode_state() -> dict:
         mode_label = f"Broadcasting from {_current_site['name']}"
     elif _current_mode == "relative_base" and not _establishing:
         mode_label = "Broadcasting (Relative)"
+    elif _current_mode == "cors_establish" and _establishing:
+        phase = (_establish_progress or {}).get("phase", "connecting")
+        if phase == "waiting_fix":
+            mode_label = "Waiting for RTK fix..."
+        elif phase == "averaging":
+            mode_label = "RTK Fixed — Averaging..."
+        else:
+            mode_label = "Connecting to CORS..."
     elif _establishing:
         mode_label = "Establishing position..."
 
@@ -69,6 +79,13 @@ class KnownBaseRequest(BaseModel):
 
 class RelativeBaseRequest(BaseModel):
     duration_seconds: int = Field(default=120, ge=10, le=600)
+
+
+class CORSEstablishRequest(BaseModel):
+    profile_id: int
+    averaging_seconds: int = Field(default=60, ge=10, le=600)
+    rtk_timeout_seconds: int = Field(default=120, ge=30, le=600)
+    min_accuracy: float = Field(default=0.05, ge=0.005, le=1.0)
 
 
 @router.get("")
@@ -356,6 +373,356 @@ async def _run_relative_base(duration: int):
         )
 
 
+@router.post("/cors-establish")
+async def start_cors_establish(req: CORSEstablishRequest):
+    """Start CORS Establish mode.
+
+    1. Load NTRIP profile (must be type inbound_cors)
+    2. Configure F9P as rover
+    3. Connect to CORS NTRIP caster, receive corrections
+    4. Wait for RTK fix (or timeout)
+    5. Average RTK-fixed position
+    6. Save as site, switch to Known Base mode
+    """
+    global _establishing, _establish_task
+
+    if _mode_lock.locked():
+        raise HTTPException(status_code=409, detail="Mode change in progress")
+
+    # Load and validate NTRIP profile
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM ntrip_profiles WHERE id = ? AND type = 'inbound_cors'",
+            (req.profile_id,),
+        )
+        profile = await cursor.fetchone()
+
+    if profile is None:
+        raise HTTPException(status_code=404, detail="CORS NTRIP profile not found")
+
+    if not profile["host"] or not profile["mountpoint"]:
+        raise HTTPException(status_code=400, detail="NTRIP profile missing host or mountpoint")
+
+    # Check GNSS connection
+    if not gnss_state.connected:
+        raise HTTPException(status_code=400, detail="GNSS receiver not connected")
+
+    # Cancel any existing establish task
+    if _establish_task is not None and not _establish_task.done():
+        _establish_task.cancel()
+
+    profile_dict = {
+        "id": profile["id"],
+        "name": profile["name"],
+        "host": profile["host"],
+        "port": profile["port"] or 2101,
+        "mountpoint": profile["mountpoint"],
+        "username": profile["username"] or "",
+        "password": profile["password"] or "",
+    }
+
+    _establish_task = asyncio.create_task(
+        _run_cors_establish(
+            profile_dict,
+            req.averaging_seconds,
+            req.rtk_timeout_seconds,
+            req.min_accuracy,
+        )
+    )
+
+    return {"ok": True, "message": f"Connecting to {profile['name']}..."}
+
+
+async def _run_cors_establish(
+    profile: dict,
+    averaging_seconds: int,
+    rtk_timeout: int,
+    min_accuracy: float,
+):
+    """Background task: connect to CORS, wait for RTK fix, average, start base."""
+    global _current_mode, _current_site, _current_session_id, _session_started_at
+    global _establishing, _establish_progress, _cors_ntrip_client
+
+    async with _mode_lock:
+        # End previous session
+        await _end_current_session()
+
+        _current_mode = "cors_establish"
+        _establishing = True
+        _establish_progress = {
+            "phase": "connecting",
+            "elapsed_seconds": 0,
+            "total_seconds": rtk_timeout,
+            "rtk_quality": "none",
+            "accuracy_h": 0,
+            "accuracy_v": 0,
+            "samples": 0,
+            "current_position": None,
+            "ntrip_connected": False,
+            "ntrip_bytes": 0,
+            "profile_name": profile["name"],
+        }
+
+        await broadcast_event({
+            "type": "mode_change",
+            "mode": "cors_establish",
+            "site": None,
+            "session_id": None,
+        })
+
+        # Configure F9P as rover (disable TMODE3)
+        try:
+            await gnss_manager.configure_rover()
+        except Exception as exc:
+            logger.error("Failed to configure rover mode: %s", exc)
+
+        # Start NTRIP client
+        ntrip_bytes = 0
+
+        async def on_rtcm(data: bytes):
+            nonlocal ntrip_bytes
+            ntrip_bytes += len(data)
+            await gnss_manager.inject_rtcm(data)
+
+        async def gga_provider() -> str | None:
+            return await gnss_manager.generate_gga()
+
+        client = NTRIPClient(
+            host=profile["host"],
+            port=profile["port"],
+            mountpoint=profile["mountpoint"],
+            username=profile["username"],
+            password=profile["password"],
+            on_rtcm=on_rtcm,
+            gga_provider=gga_provider,
+        )
+        _cors_ntrip_client = client
+        await client.start()
+
+        # ── Phase 1: Wait for RTK Fix ──
+        start_time = time.time()
+        rtk_achieved = False
+
+        for elapsed in range(rtk_timeout):
+            if not _establishing:
+                await client.stop()
+                _cors_ntrip_client = None
+                return
+
+            await asyncio.sleep(1.0)
+
+            rtk_quality = await gnss_state.get_rtk_quality()
+            snap = await gnss_state.snapshot()
+            current_elapsed = int(time.time() - start_time)
+
+            _establish_progress = {
+                "phase": "waiting_fix",
+                "elapsed_seconds": current_elapsed,
+                "total_seconds": rtk_timeout,
+                "rtk_quality": rtk_quality,
+                "accuracy_h": snap.get("accuracy_h", 0),
+                "accuracy_v": snap.get("accuracy_v", 0) if "accuracy_v" in snap else 0,
+                "samples": 0,
+                "current_position": {
+                    "lat": snap["latitude"],
+                    "lon": snap["longitude"],
+                    "height": snap["height"],
+                } if snap.get("latitude") else None,
+                "ntrip_connected": client.is_connected,
+                "ntrip_bytes": ntrip_bytes,
+                "profile_name": profile["name"],
+            }
+
+            await broadcast_event({
+                "type": "establish_progress",
+                **_establish_progress,
+            })
+
+            if rtk_quality == "fixed" and snap.get("accuracy_h", 999) < min_accuracy:
+                rtk_achieved = True
+                break
+
+        if not rtk_achieved:
+            logger.warning("CORS establish timed out after %ds without RTK fix", rtk_timeout)
+            await client.stop()
+            _cors_ntrip_client = None
+            _establishing = False
+            _current_mode = "idle"
+            _establish_progress = None
+            await broadcast_event({
+                "type": "mode_change",
+                "mode": "idle",
+                "site": None,
+                "session_id": None,
+            })
+            await broadcast_event({
+                "type": "establish_error",
+                "message": f"RTK fix not achieved after {rtk_timeout}s",
+            })
+            return
+
+        # ── Phase 2: Average RTK-Fixed Position ──
+        lat_samples = []
+        lon_samples = []
+        height_samples = []
+        acc_h_samples = []
+        acc_v_samples = []
+        avg_start = time.time()
+
+        for elapsed in range(averaging_seconds):
+            if not _establishing:
+                await client.stop()
+                _cors_ntrip_client = None
+                return
+
+            await asyncio.sleep(1.0)
+
+            rtk_quality = await gnss_state.get_rtk_quality()
+            position = await gnss_state.get_position()
+            snap = await gnss_state.snapshot()
+
+            if position is not None and rtk_quality == "fixed":
+                lat, lon, h = position
+                lat_samples.append(lat)
+                lon_samples.append(lon)
+                height_samples.append(h)
+                acc_h_samples.append(snap.get("accuracy_h", 0))
+                acc_v_samples.append(snap.get("accuracy_v", 0) if "accuracy_v" in snap else 0)
+
+            current_elapsed = int(time.time() - avg_start)
+            current_pos = None
+            if lat_samples:
+                current_pos = {
+                    "lat": sum(lat_samples) / len(lat_samples),
+                    "lon": sum(lon_samples) / len(lon_samples),
+                    "height": sum(height_samples) / len(height_samples),
+                }
+
+            _establish_progress = {
+                "phase": "averaging",
+                "elapsed_seconds": current_elapsed,
+                "total_seconds": averaging_seconds,
+                "rtk_quality": rtk_quality,
+                "accuracy_h": snap.get("accuracy_h", 0),
+                "accuracy_v": snap.get("accuracy_v", 0) if "accuracy_v" in snap else 0,
+                "samples": len(lat_samples),
+                "current_position": current_pos,
+                "ntrip_connected": client.is_connected,
+                "ntrip_bytes": ntrip_bytes,
+                "profile_name": profile["name"],
+            }
+
+            await broadcast_event({
+                "type": "establish_progress",
+                **_establish_progress,
+            })
+
+        # Stop NTRIP client
+        await client.stop()
+        _cors_ntrip_client = None
+
+        # Check we got enough samples
+        if len(lat_samples) < 5:
+            logger.error("CORS establish: only %d RTK-fixed samples (need >= 5)", len(lat_samples))
+            _establishing = False
+            _current_mode = "idle"
+            _establish_progress = None
+            await broadcast_event({
+                "type": "mode_change",
+                "mode": "idle",
+                "site": None,
+                "session_id": None,
+            })
+            await broadcast_event({
+                "type": "establish_error",
+                "message": f"Only {len(lat_samples)} RTK-fixed samples collected",
+            })
+            return
+
+        # ── Phase 3: Save and Switch to Base ──
+        avg_lat = sum(lat_samples) / len(lat_samples)
+        avg_lon = sum(lon_samples) / len(lon_samples)
+        avg_height = sum(height_samples) / len(height_samples)
+        avg_acc_h = sum(acc_h_samples) / len(acc_h_samples) if acc_h_samples else None
+        avg_acc_v = sum(acc_v_samples) / len(acc_v_samples) if acc_v_samples else None
+
+        site_name = f"CORS Base {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        active_pid = await get_active_project_id()
+
+        async with get_db() as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO sites (name, lat, lon, height, source, accuracy_h, accuracy_v,
+                                   established, notes, project_id)
+                VALUES (?, ?, ?, ?, 'cors_rtk', ?, ?, datetime('now'), ?, ?)
+                """,
+                (
+                    site_name,
+                    avg_lat,
+                    avg_lon,
+                    avg_height,
+                    avg_acc_h,
+                    avg_acc_v,
+                    f"CORS RTK via {profile['name']}: {len(lat_samples)} samples over {averaging_seconds}s",
+                    active_pid,
+                ),
+            )
+            site_id = cursor.lastrowid
+
+            try:
+                await db.execute(
+                    "UPDATE sites SET geom = MakePoint(?, ?, 4326) WHERE id = ?",
+                    (avg_lon, avg_lat, site_id),
+                )
+            except Exception:
+                pass
+
+            await db.commit()
+
+        site_dict = {
+            "id": site_id,
+            "name": site_name,
+            "lat": avg_lat,
+            "lon": avg_lon,
+            "height": avg_height,
+        }
+
+        # Configure as base and start outputs
+        await start_base(gnss_manager, avg_lat, avg_lon, avg_height)
+
+        # Create session
+        async with get_db() as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO sessions (mode, site_id, started_at, project_id)
+                VALUES ('known_base', ?, datetime('now'), ?)
+                """,
+                (site_id, active_pid),
+            )
+            session_id = cursor.lastrowid
+            await db.commit()
+
+        # Update state
+        _current_mode = "known_base"
+        _current_site = site_dict
+        _current_session_id = session_id
+        _session_started_at = datetime.now(timezone.utc).isoformat()
+        _establishing = False
+        _establish_progress = None
+
+        await broadcast_event({
+            "type": "mode_change",
+            "mode": "known_base",
+            "site": site_dict,
+            "session_id": session_id,
+        })
+
+        logger.info(
+            "CORS establish complete: lat=%.9f lon=%.9f height=%.4f acc=%.4fm (%d samples via %s)",
+            avg_lat, avg_lon, avg_height, avg_acc_h or 0, len(lat_samples), profile["name"],
+        )
+
+
 @router.post("/stop")
 async def stop_mode():
     """Stop current mode and set to IDLE.
@@ -367,6 +734,14 @@ async def stop_mode():
     """
     global _current_mode, _current_site, _current_session_id, _session_started_at
     global _establishing, _establish_progress, _establish_task
+
+    # Stop CORS NTRIP client if running
+    if _cors_ntrip_client is not None:
+        try:
+            await _cors_ntrip_client.stop()
+        except Exception:
+            pass
+        _cors_ntrip_client = None
 
     # Cancel any running establish task
     if _establish_task is not None and not _establish_task.done():

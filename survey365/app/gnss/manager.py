@@ -87,6 +87,57 @@ class GNSSManager:
         """Write RTCM3 corrections into the receiver (for rover/establish mode)."""
         await self.serial_reader.write(data)
 
+    async def generate_gga(self) -> str | None:
+        """Generate an NMEA GGA sentence from current position for VRS feedback."""
+        async with self.state._lock:
+            if self.state.fix_type_raw < 2 or self.state.last_pvt_update <= 0:
+                return None
+
+            lat = self.state.latitude
+            lon = self.state.longitude
+            height = self.state.height
+            sats = self.state.satellites_used
+            h_acc = self.state.accuracy_h
+            hour = self.state.utc_hour
+            minute = self.state.utc_minute
+            second = self.state.utc_second
+
+        # Convert decimal degrees to NMEA ddmm.mmmm format
+        lat_abs = abs(lat)
+        lat_deg = int(lat_abs)
+        lat_min = (lat_abs - lat_deg) * 60
+        lat_ns = "N" if lat >= 0 else "S"
+
+        lon_abs = abs(lon)
+        lon_deg = int(lon_abs)
+        lon_min = (lon_abs - lon_deg) * 60
+        lon_ew = "E" if lon >= 0 else "W"
+
+        # Quality: 1=GPS, 4=RTK Fixed, 5=RTK Float
+        quality = 1
+        if h_acc > 0 and h_acc < 0.05:
+            quality = 4
+        elif h_acc > 0 and h_acc < 0.5:
+            quality = 5
+
+        hdop = 1.0  # approximation
+
+        # Build GGA sentence (without checksum)
+        body = (
+            f"GPGGA,{hour:02d}{minute:02d}{second:02d}.00,"
+            f"{lat_deg:02d}{lat_min:07.4f},{lat_ns},"
+            f"{lon_deg:03d}{lon_min:07.4f},{lon_ew},"
+            f"{quality},{sats:02d},{hdop:.1f},"
+            f"{height:.3f},M,0.000,M,,"
+        )
+
+        # Compute NMEA checksum (XOR of all chars between $ and *)
+        checksum = 0
+        for c in body:
+            checksum ^= ord(c)
+
+        return f"${body}*{checksum:02X}"
+
     async def _run_loop(self):
         """Main loop: connect, configure, read. Reconnect on error."""
         while self._running:

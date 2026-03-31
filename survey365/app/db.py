@@ -174,6 +174,20 @@ async def init_db():
                     except Exception:
                         pass
 
+        # --- Migration 004: ALDOT CORS profiles ---
+        cursor = await db.execute(
+            "SELECT id FROM ntrip_profiles WHERE name LIKE 'ALDOT CORS%' LIMIT 1"
+        )
+        if await cursor.fetchone() is None:
+            migration_file = MIGRATIONS_DIR / "004_aldot_cors.sql"
+            if migration_file.exists():
+                sql = migration_file.read_text()
+                for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+                    try:
+                        await db.execute(stmt)
+                    except Exception:
+                        pass
+
         await db.commit()
 
 

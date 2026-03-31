@@ -140,6 +140,13 @@ class GNSSState:
                 "age": round(time.time() - self.last_pvt_update, 1)
                 if self.last_pvt_update > 0
                 else None,
+                "rtk_quality": (
+                    "fixed" if self.fix_type_raw >= 3 and 0 < self.accuracy_h < 0.05
+                    else "float" if self.fix_type_raw >= 3 and 0.05 <= self.accuracy_h < 0.5
+                    else "dgps" if self.fix_type_raw >= 3 and 0.5 <= self.accuracy_h < 2.0
+                    else "autonomous" if self.fix_type_raw >= 2
+                    else "none"
+                ),
             }
 
     async def satellite_snapshot(self) -> dict:
@@ -165,3 +172,28 @@ class GNSSState:
             if self.fix_type_raw >= 2 and self.last_pvt_update > 0:
                 return (self.latitude, self.longitude, self.height)
             return None
+
+    async def is_rtk_fixed(self) -> bool:
+        """RTK Fixed: 3D fix with horizontal accuracy < 50mm."""
+        async with self._lock:
+            return self.fix_type_raw >= 3 and 0 < self.accuracy_h < 0.05
+
+    async def is_rtk_float(self) -> bool:
+        """RTK Float: 3D fix with accuracy between 50mm and 500mm."""
+        async with self._lock:
+            return self.fix_type_raw >= 3 and 0.05 <= self.accuracy_h < 0.5
+
+    async def get_rtk_quality(self) -> str:
+        """Return RTK quality string based on accuracy thresholds."""
+        async with self._lock:
+            if self.fix_type_raw < 2:
+                return "none"
+            if self.accuracy_h <= 0:
+                return "unknown"
+            if self.accuracy_h < 0.05:
+                return "fixed"
+            if self.accuracy_h < 0.5:
+                return "float"
+            if self.accuracy_h < 2.0:
+                return "dgps"
+            return "autonomous"

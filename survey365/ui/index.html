@@ -127,6 +127,7 @@
         <hr>
         <h4>Mode</h4>
         <button @click="openModePanel(); menuOpen = false">Known Point Base</button>
+        <button @click="openCorsEstablish(); menuOpen = false">Establish Point (CORS)</button>
         <button @click="startRelativeBase(); menuOpen = false">Relative Base (Quick)</button>
         <button @click="resumeMode(); menuOpen = false">Resume Last</button>
         <button class="danger" @click="stopMode(); menuOpen = false" x-show="mode !== 'idle'">Stop Broadcasting</button>
@@ -367,6 +368,41 @@
   </template>
 
   <!-- ============================================================
+       CORS Establish: Profile Picker -- Bottom Sheet
+       ============================================================ -->
+  <template x-if="showCorsPanel">
+    <div>
+      <div class="s365-sheet-backdrop" @click="showCorsPanel = false"></div>
+      <div class="s365-sheet" x-transition:enter="transition ease-out duration-250"
+           x-transition:enter-start="transform translate-y-full"
+           x-transition:enter-end="transform translate-y-0">
+        <div class="s365-sheet-handle"></div>
+        <h3>Establish Point (CORS)</h3>
+        <p style="color:#64748b; font-size:14px; margin-bottom:16px;">Select a correction source to establish a precise base position.</p>
+
+        <div x-show="corsProfiles.length > 0">
+          <template x-for="p in corsProfiles" :key="p.id">
+            <div class="s365-site-item" @click="selectCorsProfile(p)">
+              <div class="site-info">
+                <span class="site-name" x-text="p.name"></span>
+                <span class="site-detail" x-text="(p.host || '') + ':' + (p.port || 2101) + '/' + (p.mountpoint || '')"></span>
+              </div>
+              <span x-show="p.is_default" style="color:var(--s365-blue); font-size:12px; font-weight:600;">DEFAULT</span>
+            </div>
+          </template>
+        </div>
+
+        <div x-show="corsProfiles.length === 0" class="s365-empty">
+          <p>No CORS profiles configured.</p>
+          <p>Add one from the Settings page.</p>
+        </div>
+
+        <button class="s365-action-btn" @click="showCorsPanel = false" style="margin-top:12px;">Cancel</button>
+      </div>
+    </div>
+  </template>
+
+  <!-- ============================================================
        Establish Progress Panel -- Bottom Sheet
        ============================================================ -->
   <template x-if="showEstablishPanel">
@@ -375,14 +411,31 @@
       <div class="s365-sheet">
         <div class="s365-sheet-handle"></div>
         <div class="s365-establish-panel">
-          <h3>Establishing Position</h3>
+          <h3 x-text="establishPhase === 'waiting_fix' ? 'Waiting for RTK Fix' : establishPhase === 'averaging' ? 'RTK Fixed — Averaging' : 'Establishing Position'"></h3>
+
+          <!-- RTK quality indicator (for CORS establish) -->
+          <div x-show="establishRtkQuality" style="text-align:center; margin-bottom:12px;">
+            <span style="display:inline-block; padding:4px 16px; border-radius:8px; font-size:14px; font-weight:700;"
+                  :style="{
+                    background: establishRtkQuality === 'fixed' ? 'var(--s365-green)' : establishRtkQuality === 'float' ? 'var(--s365-yellow)' : '#e2e8f0',
+                    color: establishRtkQuality === 'fixed' ? '#fff' : establishRtkQuality === 'float' ? '#1e293b' : '#475569'
+                  }"
+                  x-text="establishRtkQuality.toUpperCase()"></span>
+            <span x-show="establishAccuracy > 0" style="margin-left:8px; font-size:14px; color:#64748b;"
+                  x-text="establishAccuracy < 1 ? (establishAccuracy * 1000).toFixed(0) + 'mm' : establishAccuracy.toFixed(3) + 'm'"></span>
+          </div>
+
           <div class="establish-status">
-            Averaging... <span x-text="establishElapsed"></span>s / <span x-text="establishTotal"></span>s
+            <span x-text="establishPhase === 'waiting_fix' ? 'Connecting...' : 'Averaging...'"></span>
+            <span x-text="establishElapsed"></span>s / <span x-text="establishTotal"></span>s
           </div>
           <progress :value="establishPercent" max="100"></progress>
           <div class="establish-detail">
             <span x-text="establishSamples"></span> samples collected
-            <template x-if="gnss.accuracy_h > 0">
+            <template x-if="establishNtripConnected">
+              <span> &middot; NTRIP connected</span>
+            </template>
+            <template x-if="gnss.accuracy_h > 0 && !establishRtkQuality">
               <span> &middot; Accuracy: <span x-text="gnss.accuracy_h.toFixed(3)"></span>m</span>
             </template>
           </div>
