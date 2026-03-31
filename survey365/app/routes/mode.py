@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..db import get_active_project_id, get_db
+from ..db import get_active_project_id, get_config, get_db
+from ..geodesy import build_vertical_products
 from ..gnss import gnss_manager, gnss_state
 from ..gnss.base_station import start_base, stop_base
 from ..gnss.ntrip_client import NTRIPClient
@@ -35,6 +36,14 @@ _establishing: bool = False
 _establish_progress: dict | None = None
 _establish_task: asyncio.Task | None = None
 _cors_ntrip_client: NTRIPClient | None = None
+
+
+async def _get_antenna_height_m() -> float:
+    """Read antenna height config safely."""
+    try:
+        return max(0.0, float(await get_config("antenna_height_m") or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def get_mode_state() -> dict:
@@ -114,7 +123,7 @@ async def start_known_base(req: KnownBaseRequest):
         # Look up site
         async with get_db() as db:
             cursor = await db.execute(
-                "SELECT id, name, lat, lon, height FROM sites WHERE id = ?",
+                "SELECT id, name, lat, lon, height, ortho_height FROM sites WHERE id = ?",
                 (req.site_id,),
             )
             site = await cursor.fetchone()
@@ -128,6 +137,7 @@ async def start_known_base(req: KnownBaseRequest):
             "lat": site["lat"],
             "lon": site["lon"],
             "height": site["height"],
+            "ortho_height": site["ortho_height"],
         }
 
         # End previous session if active
@@ -301,6 +311,19 @@ async def _run_relative_base(duration: int):
         avg_lat = sum(lat_samples) / len(lat_samples)
         avg_lon = sum(lon_samples) / len(lon_samples)
         avg_height = sum(height_samples) / len(height_samples)
+        antenna_height_m = await _get_antenna_height_m()
+        vertical_products = await build_vertical_products(
+            {
+                "latitude": avg_lat,
+                "longitude": avg_lon,
+                "height": avg_height,
+                "height_msl": None,
+                "accuracy_v": None,
+                "age": 0.0,
+            },
+            antenna_height_m=antenna_height_m,
+        )
+        ortho_height = vertical_products.get("elevation")
 
         # Save as a site with source='averaged'
         site_name = f"Relative Base {datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -309,15 +332,16 @@ async def _run_relative_base(duration: int):
         async with get_db() as db:
             cursor = await db.execute(
                 """
-                INSERT INTO sites (name, lat, lon, height, source, accuracy_h, accuracy_v,
+                INSERT INTO sites (name, lat, lon, height, ortho_height, source, accuracy_h, accuracy_v,
                                    established, notes, project_id)
-                VALUES (?, ?, ?, ?, 'averaged', NULL, NULL, datetime('now'), ?, ?)
+                VALUES (?, ?, ?, ?, ?, 'averaged', NULL, NULL, datetime('now'), ?, ?)
                 """,
                 (
                     site_name,
                     avg_lat,
                     avg_lon,
                     avg_height,
+                    ortho_height,
                     f"Averaged from {len(lat_samples)} samples over {duration}s",
                     active_pid,
                 ),
@@ -341,6 +365,7 @@ async def _run_relative_base(duration: int):
             "lat": avg_lat,
             "lon": avg_lon,
             "height": avg_height,
+            "ortho_height": ortho_height,
         }
 
         # Configure GNSS receiver and start RTCM outputs
@@ -660,6 +685,19 @@ async def _run_cors_establish(
         avg_height = sum(height_samples) / len(height_samples)
         avg_acc_h = sum(acc_h_samples) / len(acc_h_samples) if acc_h_samples else None
         avg_acc_v = sum(acc_v_samples) / len(acc_v_samples) if acc_v_samples else None
+        antenna_height_m = await _get_antenna_height_m()
+        vertical_products = await build_vertical_products(
+            {
+                "latitude": avg_lat,
+                "longitude": avg_lon,
+                "height": avg_height,
+                "height_msl": None,
+                "accuracy_v": avg_acc_v,
+                "age": 0.0,
+            },
+            antenna_height_m=antenna_height_m,
+        )
+        ortho_height = vertical_products.get("elevation")
 
         site_name = f"CORS Base {datetime.now().strftime('%Y-%m-%d %H:%M')}"
         active_pid = await get_active_project_id()
@@ -667,15 +705,16 @@ async def _run_cors_establish(
         async with get_db() as db:
             cursor = await db.execute(
                 """
-                INSERT INTO sites (name, lat, lon, height, source, accuracy_h, accuracy_v,
+                INSERT INTO sites (name, lat, lon, height, ortho_height, source, accuracy_h, accuracy_v,
                                    established, notes, project_id)
-                VALUES (?, ?, ?, ?, 'cors_rtk', ?, ?, datetime('now'), ?, ?)
+                VALUES (?, ?, ?, ?, ?, 'cors_rtk', ?, ?, datetime('now'), ?, ?)
                 """,
                 (
                     site_name,
                     avg_lat,
                     avg_lon,
                     avg_height,
+                    ortho_height,
                     avg_acc_h,
                     avg_acc_v,
                     f"CORS RTK via {profile['name']}: {len(lat_samples)} samples over {averaging_seconds}s",
@@ -700,6 +739,7 @@ async def _run_cors_establish(
             "lat": avg_lat,
             "lon": avg_lon,
             "height": avg_height,
+            "ortho_height": ortho_height,
         }
 
         # Configure as base and start outputs

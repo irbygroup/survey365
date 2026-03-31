@@ -92,8 +92,8 @@
                 <td style="font-family: monospace; font-size: 13px;">
                   <span x-text="parseFloat(site.lat).toFixed(8)"></span>,
                   <span x-text="parseFloat(site.lon).toFixed(8)"></span>
-                  <template x-if="site.height">
-                    <span x-text="' @ ' + parseFloat(site.height).toFixed(3) + 'm'"></span>
+                  <template x-if="site.ortho_height != null || site.height != null">
+                    <span x-text="' @ ' + parseFloat(site.ortho_height != null ? site.ortho_height : site.height).toFixed(3) + 'm ' + (site.ortho_height != null ? 'NAVD88' : 'ellip')"></span>
                   </template>
                 </td>
                 <td><span class="site-source-badge" :class="site.source || ''" x-text="site.source || '--'"></span></td>
@@ -312,6 +312,17 @@
           <input type="text" id="cfg-rtcm-messages" x-model="config.rtcm_messages"
                  placeholder="1005(10),1077,1087,1097,1127,1230(10)">
 
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <label for="cfg-antenna-height">Antenna Height (m)</label>
+              <input type="number" id="cfg-antenna-height" x-model="config.antenna_height_m" step="any" min="0">
+            </div>
+            <div>
+              <label>Elevation Display</label>
+              <input type="text" value="Primary: NAVD88 ground elevation" readonly style="background:#f8fafc; color:#64748b;">
+            </div>
+          </div>
+
           <h3 style="margin:20px 0 8px 0; color:#0f172a;">RTCM Outputs</h3>
           <label style="display:flex; align-items:center; gap:8px; margin:12px 0;">
             <input type="checkbox" x-model="config.rinex_enabled" style="width:auto; height:auto;">
@@ -438,6 +449,7 @@
           gnss_port: '/dev/ttyGNSS',
           gnss_baud: '115200',
           gnss_backend: 'ublox',
+          antenna_height_m: '0.0',
           rtcm_messages: '1005(10),1077,1087,1097,1127,1230(10)',
           rinex_enabled: true,
           rinex_rotate_hours: '24',
@@ -731,6 +743,7 @@
               this.config.gnss_port = data.gnss_port || '/dev/ttyGNSS';
               this.config.gnss_baud = data.gnss_baud || '115200';
               this.config.gnss_backend = data.gnss_backend || 'ublox';
+              this.config.antenna_height_m = data.antenna_height_m || '0.0';
               this.config.rtcm_messages = data.rtcm_messages || '1005(10),1077,1087,1097,1127,1230(10)';
               this.config.rinex_enabled = data.rinex_enabled === true || data.rinex_enabled === 'true';
               this.config.rinex_rotate_hours = data.rinex_rotate_hours || '24';
@@ -759,6 +772,7 @@
                 gnss_port: this.config.gnss_port,
                 gnss_baud: String(this.config.gnss_baud),
                 gnss_backend: this.config.gnss_backend,
+                antenna_height_m: String(this.config.antenna_height_m),
                 rtcm_messages: this.config.rtcm_messages,
                 rinex_enabled: this.config.rinex_enabled ? 'true' : 'false',
                 rinex_rotate_hours: String(this.config.rinex_rotate_hours),

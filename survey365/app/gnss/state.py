@@ -52,6 +52,7 @@ class GNSSState:
     latitude: float = 0.0
     longitude: float = 0.0
     height: float = 0.0
+    height_msl: float = 0.0
     accuracy_h: float = 0.0
     accuracy_v: float = 0.0
     pdop: float = 0.0
@@ -76,6 +77,7 @@ class GNSSState:
         lat: float,
         lon: float,
         height: float,
+        height_msl: float,
         h_acc: float,
         v_acc: float,
         pdop: float,
@@ -96,6 +98,7 @@ class GNSSState:
             self.latitude = lat
             self.longitude = lon
             self.height = height
+            self.height_msl = height_msl
             self.accuracy_h = h_acc
             self.accuracy_v = v_acc
             self.pdop = pdop
@@ -130,6 +133,7 @@ class GNSSState:
                 "latitude": self.latitude,
                 "longitude": self.longitude,
                 "height": self.height,
+                "height_msl": self.height_msl,
                 "accuracy_h": self.accuracy_h,
                 "accuracy_v": self.accuracy_v,
                 "pdop": self.pdop,

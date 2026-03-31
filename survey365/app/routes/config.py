@@ -9,6 +9,7 @@ Known config keys and their types:
 - auto_resume (bool as str): Resume last session on boot
 - default_lat/default_lon/default_zoom: default map view
 - gnss_port/gnss_baud/gnss_backend: receiver connection settings
+- antenna_height_m: antenna reference point height above ground/mark in meters
 - rtcm_messages: RTCM output selection, e.g. "1005(10),1077,1087,1097,1127,1230(10)"
 - rinex_enabled/rinex_rotate_hours/rinex_data_dir: raw logging settings
 - local_caster_enabled/local_caster_port/local_caster_mountpoint: local NTRIP caster
@@ -38,6 +39,7 @@ KNOWN_KEYS = {
     "gnss_port",
     "gnss_baud",
     "gnss_backend",
+    "antenna_height_m",
     "rtcm_messages",
     "rinex_enabled",
     "rinex_rotate_hours",
@@ -58,6 +60,7 @@ class ConfigUpdate(BaseModel):
     gnss_port: str | None = None
     gnss_baud: str | None = None
     gnss_backend: str | None = None
+    antenna_height_m: str | None = None
     rtcm_messages: str | None = None
     rinex_enabled: str | None = None
     rinex_rotate_hours: str | None = None
@@ -100,6 +103,15 @@ async def update_config(config: ConfigUpdate, _admin=Depends(require_admin)):
 
     for key, value in update_data.items():
         if value is not None:
+            if key == "antenna_height_m":
+                try:
+                    if float(value) < 0:
+                        raise ValueError
+                except ValueError as exc:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="antenna_height_m must be a non-negative number",
+                    ) from exc
             await set_config(key, str(value))
 
     return {"ok": True}

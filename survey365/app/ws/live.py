@@ -13,8 +13,6 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from ..gnss import gnss_manager, gnss_state
-
 logger = logging.getLogger("survey365.ws")
 
 router = APIRouter()
@@ -46,25 +44,12 @@ async def _status_broadcast_loop():
     while True:
         try:
             if _clients:
-                from ..routes.mode import get_mode_state
+                from ..routes.status import build_status_payload
 
-                gnss = await gnss_state.snapshot()
-                mode_state = get_mode_state()
-
-                services = {
-                    "gnss_connected": gnss_manager.serial_reader.is_connected,
-                    "rtcm_outputs": len(gnss_manager.rtcm_fanout.outputs),
-                    "ntrip_push": gnss_manager.rtcm_fanout.has_output("ntrip_push"),
-                    "local_caster": gnss_manager.rtcm_fanout.has_output("local_caster"),
-                    "rinex_logging": gnss_manager.rtcm_fanout.has_output("rinex"),
-                }
-
+                payload = await build_status_payload()
                 message = json.dumps({
                     "type": "status",
-                    "gnss": gnss,
-                    "mode": mode_state["mode"],
-                    "mode_label": mode_state["mode_label"],
-                    "services": services,
+                    **payload,
                 })
 
                 dead = set()

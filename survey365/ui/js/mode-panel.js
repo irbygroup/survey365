@@ -67,7 +67,14 @@ function survey365App() {
       satellites_visible: 0,
       latitude: 0,
       longitude: 0,
-      height: 0,
+      height: null,
+      height_msl: null,
+      height_navd88: null,
+      ground_navd88: null,
+      elevation: null,
+      elevation_accuracy: null,
+      elevation_label: 'NAVD88',
+      antenna_height_m: 0,
       accuracy_h: 0,
       accuracy_v: 0,
       pdop: 0
@@ -535,7 +542,14 @@ function survey365App() {
       this.gnss.satellites_visible = gnss.satellites_visible || 0;
       this.gnss.latitude = gnss.latitude || 0;
       this.gnss.longitude = gnss.longitude || 0;
-      this.gnss.height = gnss.height || 0;
+      this.gnss.height = gnss.height ?? null;
+      this.gnss.height_msl = gnss.height_msl ?? null;
+      this.gnss.height_navd88 = gnss.height_navd88 ?? null;
+      this.gnss.ground_navd88 = gnss.ground_navd88 ?? null;
+      this.gnss.elevation = gnss.elevation ?? null;
+      this.gnss.elevation_accuracy = gnss.elevation_accuracy ?? null;
+      this.gnss.elevation_label = gnss.elevation_label || 'NAVD88';
+      this.gnss.antenna_height_m = gnss.antenna_height_m ?? 0;
       this.gnss.accuracy_h = gnss.accuracy_h || 0;
       this.gnss.accuracy_v = gnss.accuracy_v || 0;
       this.gnss.pdop = gnss.pdop || 0;

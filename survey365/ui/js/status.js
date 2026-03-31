@@ -63,7 +63,7 @@
       fetch('/api/status')
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          _dispatch({ type: 'status', gnss: data.gnss, mode: data.mode, mode_label: data.mode_label, services: data.services });
+          _dispatch({ type: 'status', ...data });
         })
         .catch(function () {
           /* network error - will retry next interval */

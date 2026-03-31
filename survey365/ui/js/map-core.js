@@ -318,7 +318,8 @@
         '<table>' +
         '<tr><td>Lat</td><td>' + parseFloat(p.lat).toFixed(8) + '</td></tr>' +
         '<tr><td>Lon</td><td>' + parseFloat(p.lon).toFixed(8) + '</td></tr>' +
-        (p.height ? '<tr><td>Height</td><td>' + parseFloat(p.height).toFixed(3) + ' m</td></tr>' : '') +
+        (p.ortho_height !== '' ? '<tr><td>NAVD88</td><td>' + parseFloat(p.ortho_height).toFixed(3) + ' m</td></tr>' : '') +
+        (p.height !== '' ? '<tr><td>Ellipsoid</td><td>' + parseFloat(p.height).toFixed(3) + ' m</td></tr>' : '') +
         (p.source ? '<tr><td>Source</td><td>' + _escapeHtml(p.source) + '</td></tr>' : '') +
         (p.accuracy_h ? '<tr><td>H Acc</td><td>' + parseFloat(p.accuracy_h).toFixed(3) + ' m</td></tr>' : '') +
         (p.last_used ? '<tr><td>Last used</td><td>' + _escapeHtml(p.last_used) + '</td></tr>' : '') +
@@ -359,7 +360,8 @@
           name: s.name || '',
           lat: s.lat,
           lon: s.lon,
-          height: s.height || '',
+          ortho_height: s.ortho_height ?? '',
+          height: s.height ?? '',
           source: s.source || '',
           accuracy_h: s.accuracy_h || '',
           last_used: s.last_used || '',

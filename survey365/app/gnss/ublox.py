@@ -155,6 +155,7 @@ def parse_nav_pvt(payload: bytes) -> dict | None:
     lon_raw = struct.unpack_from("<i", payload, 24)[0]
     lat_raw = struct.unpack_from("<i", payload, 28)[0]
     height_raw = struct.unpack_from("<i", payload, 32)[0]
+    h_msl_raw = struct.unpack_from("<i", payload, 36)[0]
     h_acc_raw = struct.unpack_from("<I", payload, 40)[0]
     v_acc_raw = struct.unpack_from("<I", payload, 44)[0]
     ground_speed_raw = struct.unpack_from("<i", payload, 60)[0]
@@ -167,6 +168,7 @@ def parse_nav_pvt(payload: bytes) -> dict | None:
         "lat": lat_raw * 1e-7,
         "lon": lon_raw * 1e-7,
         "height": height_raw / 1000.0,
+        "height_msl": h_msl_raw / 1000.0,
         "h_acc": h_acc_raw / 1000.0,
         "v_acc": v_acc_raw / 1000.0,
         "pdop": pdop_raw * 0.01,
@@ -277,6 +279,7 @@ class UBloxBackend:
                     lat=result["lat"],
                     lon=result["lon"],
                     height=result["height"],
+                    height_msl=result["height_msl"],
                     h_acc=result["h_acc"],
                     v_acc=result["v_acc"],
                     pdop=result["pdop"],

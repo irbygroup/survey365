@@ -9,9 +9,38 @@ import time
 
 from fastapi import APIRouter
 
+from ..geodesy import enrich_gnss_snapshot
 from ..gnss import gnss_manager, gnss_state
 
 router = APIRouter(prefix="/api", tags=["status"])
+
+
+def get_services_snapshot() -> dict:
+    return {
+        "gnss_connected": gnss_manager.serial_reader.is_connected,
+        "rtcm_outputs": len(gnss_manager.rtcm_fanout.outputs),
+        "ntrip_push": gnss_manager.rtcm_fanout.has_output("ntrip_push"),
+        "local_caster": gnss_manager.rtcm_fanout.has_output("local_caster"),
+        "rinex_logging": gnss_manager.rtcm_fanout.has_output("rinex"),
+    }
+
+
+async def build_status_payload() -> dict:
+    """Build the shared status payload used by REST and WebSocket updates."""
+    from .mode import get_mode_state
+
+    gnss = await enrich_gnss_snapshot(await gnss_state.snapshot())
+    mode_state = get_mode_state()
+
+    return {
+        "mode": mode_state["mode"],
+        "mode_label": mode_state["mode_label"],
+        "site": mode_state["site"],
+        "gnss": gnss,
+        "services": get_services_snapshot(),
+        "uptime_seconds": round(time.time() - _start_time, 0),
+        "session": mode_state.get("session"),
+    }
 
 
 @router.get("/status")
@@ -20,29 +49,7 @@ async def get_status():
 
     No auth required -- field crew needs this.
     """
-    # Import here to avoid circular import with mode state
-    from .mode import get_mode_state
-
-    gnss = await gnss_state.snapshot()
-    mode_state = get_mode_state()
-
-    services = {
-        "gnss_connected": gnss_manager.serial_reader.is_connected,
-        "rtcm_outputs": len(gnss_manager.rtcm_fanout.outputs),
-        "ntrip_push": gnss_manager.rtcm_fanout.has_output("ntrip_push"),
-        "local_caster": gnss_manager.rtcm_fanout.has_output("local_caster"),
-        "rinex_logging": gnss_manager.rtcm_fanout.has_output("rinex"),
-    }
-
-    return {
-        "mode": mode_state["mode"],
-        "mode_label": mode_state["mode_label"],
-        "site": mode_state["site"],
-        "gnss": gnss,
-        "services": services,
-        "uptime_seconds": round(time.time() - _start_time, 0),
-        "session": mode_state.get("session"),
-    }
+    return await build_status_payload()
 
 
 @router.get("/satellites")

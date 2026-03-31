@@ -183,8 +183,14 @@
         <span class="s365-detail-value" x-text="gnss.latitude ? gnss.latitude.toFixed(8) : '--'"></span>
         <span class="s365-detail-label">Lon</span>
         <span class="s365-detail-value" x-text="gnss.longitude ? gnss.longitude.toFixed(8) : '--'"></span>
-        <span class="s365-detail-label">Height</span>
-        <span class="s365-detail-value" x-text="gnss.height ? gnss.height.toFixed(3) + ' m' : '--'"></span>
+        <span class="s365-detail-label" x-text="gnss.elevation_label || 'NAVD88'"></span>
+        <span class="s365-detail-value" x-text="gnss.elevation != null ? gnss.elevation.toFixed(3) + ' m' : '--'"></span>
+        <span class="s365-detail-label" x-show="gnss.elevation_label !== 'MSL'">MSL</span>
+        <span class="s365-detail-value" x-show="gnss.elevation_label !== 'MSL'" x-text="gnss.height_msl != null ? gnss.height_msl.toFixed(3) + ' m' : '--'"></span>
+        <span class="s365-detail-label">Ellipsoid</span>
+        <span class="s365-detail-value" x-text="gnss.height != null ? gnss.height.toFixed(3) + ' m' : '--'"></span>
+        <span class="s365-detail-label">Antenna Ht</span>
+        <span class="s365-detail-value" x-text="gnss.antenna_height_m != null ? gnss.antenna_height_m.toFixed(3) + ' m' : '0.000 m'"></span>
       </div>
     </div>
 
@@ -196,6 +202,8 @@
         <span class="s365-detail-value" x-text="gnss.accuracy_h ? gnss.accuracy_h.toFixed(3) + ' m' : '--'"></span>
         <span class="s365-detail-label">Vertical</span>
         <span class="s365-detail-value" x-text="gnss.accuracy_v ? gnss.accuracy_v.toFixed(3) + ' m' : '--'"></span>
+        <span class="s365-detail-label">Elevation</span>
+        <span class="s365-detail-value" x-text="gnss.elevation_accuracy != null ? gnss.elevation_accuracy.toFixed(3) + ' m' : '--'"></span>
         <span class="s365-detail-label">PDOP</span>
         <span class="s365-detail-value" x-text="gnss.pdop ? gnss.pdop.toFixed(2) : '--'"></span>
       </div>
@@ -353,8 +361,8 @@
             <div class="confirm-coords">
               <span x-text="parseFloat(confirmSite.lat).toFixed(8)"></span>,
               <span x-text="parseFloat(confirmSite.lon).toFixed(8)"></span>
-              <template x-if="confirmSite.height">
-                <span x-text="' @ ' + parseFloat(confirmSite.height).toFixed(3) + 'm'"></span>
+              <template x-if="confirmSite.ortho_height != null || confirmSite.height != null">
+                <span x-text="' @ ' + parseFloat(confirmSite.ortho_height != null ? confirmSite.ortho_height : confirmSite.height).toFixed(3) + 'm ' + (confirmSite.ortho_height != null ? 'NAVD88' : 'ellip')"></span>
               </template>
             </div>
             <div class="confirm-actions">

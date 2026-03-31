@@ -217,6 +217,20 @@ async def init_db():
                     except Exception:
                         pass
 
+        # --- Migration 006: antenna height config key ---
+        cursor = await db.execute(
+            "SELECT value FROM config WHERE key = 'antenna_height_m'"
+        )
+        if await cursor.fetchone() is None:
+            migration_file = MIGRATIONS_DIR / "006_antenna_height_config.sql"
+            if migration_file.exists():
+                sql = migration_file.read_text()
+                for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+                    try:
+                        await db.execute(stmt)
+                    except Exception:
+                        pass
+
         await db.commit()
 
 
