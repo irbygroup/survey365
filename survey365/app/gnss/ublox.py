@@ -37,12 +37,14 @@ CFG_TMODE_LON_HP = 0x2003000C
 CFG_TMODE_HEIGHT = 0x4003000D
 CFG_TMODE_HEIGHT_HP = 0x2003000E
 
-CFG_MSGOUT_RTCM_1005_USB = 0x209102BE
-CFG_MSGOUT_RTCM_1077_USB = 0x209102CC
-CFG_MSGOUT_RTCM_1087_USB = 0x209102D1
-CFG_MSGOUT_RTCM_1097_USB = 0x20910318
-CFG_MSGOUT_RTCM_1127_USB = 0x209102D6
-CFG_MSGOUT_RTCM_1230_USB = 0x20910303
+CFG_MSGOUT_RTCM_1005_USB = 0x209102C0
+CFG_MSGOUT_RTCM_1077_USB = 0x209102CF
+CFG_MSGOUT_RTCM_1087_USB = 0x209102D4
+CFG_MSGOUT_RTCM_1097_USB = 0x2091031B
+CFG_MSGOUT_RTCM_1127_USB = 0x209102D9
+CFG_MSGOUT_RTCM_1230_USB = 0x20910306
+
+CFG_USBOUTPROT_RTCM3X = 0x10780004
 
 CFG_RATE_MEAS = 0x30210001
 CFG_HW_ANT_CFG_VOLTCTRL = 0x10A3002E
@@ -335,7 +337,8 @@ class UBloxBackend:
     async def enable_rtcm_output(self, serial_reader, message_spec: str | None = None):
         """Enable RTCM3 message output on USB port."""
         selected_rates = parse_rtcm_message_spec(message_spec)
-        kvs = [(key, rate, "U1") for key, rate in selected_rates.items()]
+        kvs = [(CFG_USBOUTPROT_RTCM3X, 1, "U1")]
+        kvs.extend((key, rate, "U1") for key, rate in selected_rates.items())
         msg = _build_valset(kvs)
         await serial_reader.write(msg)
         logger.info("Enabled RTCM3 output on USB: %s", selected_rates)
@@ -343,7 +346,8 @@ class UBloxBackend:
 
     async def disable_rtcm_output(self, serial_reader):
         """Disable all RTCM3 messages on USB port."""
-        kvs = [(key, 0, "U1") for key in DEFAULT_RTCM_RATES]
+        kvs = [(CFG_USBOUTPROT_RTCM3X, 0, "U1")]
+        kvs.extend((key, 0, "U1") for key in DEFAULT_RTCM_RATES)
         msg = _build_valset(kvs)
         await serial_reader.write(msg)
         logger.info("Disabled RTCM3 output on USB")
