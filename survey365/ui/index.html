@@ -153,9 +153,12 @@
        Bottom-left Status Strip (clickable to expand)
        ============================================================ -->
   <div class="s365-status-strip" @click="showStatusDetail = !showStatusDetail" style="cursor:pointer">
-    <div class="s365-mode-indicator" :class="modeColor">
+    <div class="s365-mode-indicator" :class="statusIndicatorColor">
       <span class="s365-mode-dot"></span>
-      <span x-text="modeLabel"></span>
+      <div class="s365-mode-text">
+        <span class="s365-mode-primary" x-text="modeLabel"></span>
+        <span class="s365-mode-secondary" x-text="gnssQualityLabel"></span>
+      </div>
       <span class="s365-ws-indicator" :class="wsConnected ? 'connected' : 'disconnected'"
             :title="wsConnected ? 'Live connected' : 'Disconnected'"></span>
     </div>

@@ -388,10 +388,26 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-bottom: 4px;
+}
+
+.s365-mode-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.s365-mode-primary {
   font-size: 15px;
   font-weight: 700;
-  margin-bottom: 4px;
-  white-space: nowrap;
+  line-height: 1.1;
+}
+
+.s365-mode-secondary {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--s365-text-muted);
 }
 
 .s365-mode-dot {

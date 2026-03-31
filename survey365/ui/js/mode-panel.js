@@ -75,6 +75,7 @@ function survey365App() {
       elevation_accuracy: null,
       elevation_label: 'NAVD88',
       antenna_height_m: 0,
+      rtk_quality: 'none',
       accuracy_h: 0,
       accuracy_v: 0,
       pdop: 0
@@ -154,13 +155,29 @@ function survey365App() {
     toasts: [],
 
     /* ---------------------------------------------------------------
-     * Computed: mode indicator CSS class
+     * Computed: status indicator CSS class
      * --------------------------------------------------------------- */
-    get modeColor() {
+    get statusIndicatorColor() {
       if (this.establishing) return 's365-mode-yellow';
       if (this.mode === 'known_base') return 's365-mode-green';
       if (this.mode === 'relative_base') return 's365-mode-orange';
+      if (!this.gnss || !this.gnss.rtk_quality) return 's365-mode-gray';
+      if (this.gnss.rtk_quality === 'fixed') return 's365-mode-green';
+      if (this.gnss.rtk_quality === 'float') return 's365-mode-yellow';
+      if (this.gnss.rtk_quality === 'dgps') return 's365-mode-orange';
+      if (this.gnss.rtk_quality === 'autonomous') return 's365-mode-red';
       return 's365-mode-gray';
+    },
+
+    get gnssQualityLabel() {
+      if (!this.gnss || !this.gnss.connected) return 'No receiver';
+      var quality = (this.gnss.rtk_quality || 'none').toLowerCase();
+      if (quality === 'fixed') return 'RTK Fixed';
+      if (quality === 'float') return 'RTK Float';
+      if (quality === 'dgps') return 'DGPS';
+      if (quality === 'autonomous') return 'Autonomous';
+      if (quality === 'unknown') return 'GNSS';
+      return 'No Fix';
     },
 
     /* ---------------------------------------------------------------
@@ -550,6 +567,8 @@ function survey365App() {
       this.gnss.elevation_accuracy = gnss.elevation_accuracy ?? null;
       this.gnss.elevation_label = gnss.elevation_label || 'NAVD88';
       this.gnss.antenna_height_m = gnss.antenna_height_m ?? 0;
+      this.gnss.rtk_quality = gnss.rtk_quality || 'none';
+      this.gnss.connected = !!gnss.connected;
       this.gnss.accuracy_h = gnss.accuracy_h || 0;
       this.gnss.accuracy_v = gnss.accuracy_v || 0;
       this.gnss.pdop = gnss.pdop || 0;
