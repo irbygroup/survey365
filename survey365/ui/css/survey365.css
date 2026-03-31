@@ -1071,6 +1071,8 @@ html, body {
 /* --- Admin Page Styles --- */
 .s365-admin-page {
   min-height: 100vh;
+  height: auto;
+  overflow: auto;
   background: #f8fafc;
 }
 
