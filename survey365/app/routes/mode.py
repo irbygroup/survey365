@@ -219,6 +219,9 @@ async def _run_relative_base(duration: int):
         await _end_current_session()
 
         _current_mode = "relative_base"
+        _current_site = None
+        _current_session_id = None
+        _session_started_at = None
         _establishing = True
         _establish_progress = {
             "elapsed_seconds": 0,
@@ -283,6 +286,9 @@ async def _run_relative_base(duration: int):
             logger.error("No valid GNSS samples collected during averaging")
             _establishing = False
             _current_mode = "idle"
+            _current_site = None
+            _current_session_id = None
+            _session_started_at = None
             _establish_progress = None
             await broadcast_event({
                 "type": "mode_change",
@@ -448,6 +454,9 @@ async def _run_cors_establish(
         await _end_current_session()
 
         _current_mode = "cors_establish"
+        _current_site = None
+        _current_session_id = None
+        _session_started_at = None
         _establishing = True
         _establish_progress = {
             "phase": "connecting",
@@ -548,6 +557,9 @@ async def _run_cors_establish(
             _cors_ntrip_client = None
             _establishing = False
             _current_mode = "idle"
+            _current_site = None
+            _current_session_id = None
+            _session_started_at = None
             _establish_progress = None
             await broadcast_event({
                 "type": "mode_change",
@@ -626,6 +638,9 @@ async def _run_cors_establish(
             logger.error("CORS establish: only %d RTK-fixed samples (need >= 5)", len(lat_samples))
             _establishing = False
             _current_mode = "idle"
+            _current_site = None
+            _current_session_id = None
+            _session_started_at = None
             _establish_progress = None
             await broadcast_event({
                 "type": "mode_change",
@@ -733,7 +748,7 @@ async def stop_mode():
     4. Broadcast via WebSocket
     """
     global _current_mode, _current_site, _current_session_id, _session_started_at
-    global _establishing, _establish_progress, _establish_task
+    global _establishing, _establish_progress, _establish_task, _cors_ntrip_client
 
     # Stop CORS NTRIP client if running
     if _cors_ntrip_client is not None:

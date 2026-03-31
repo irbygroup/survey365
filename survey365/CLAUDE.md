@@ -156,10 +156,14 @@ Default admin password: `survey365`
              +-- NTRIPCaster (local server)
 ```
 
-## Phase 1 Scope (current)
+## Phase 2 Scope (current)
 
-Map UI, GNSS status, Known Point Base, Relative Base, Sites DB, NTRIP profile management, simple password auth.
+Map UI, GNSS status, Known Point Base, Relative Base, native GNSS control,
+RTCM3 fan-out, NTRIP client/server/push, NTRIP profile CRUD, ALDOT CORS seeding,
+CORS establish mode, Sites DB, projects, and simple password auth.
 
 ## Future Phases
 
-See PRD.md for full roadmap: CORS establish, cell hotspot, multi-rover tracking, file import (KML/DXF/DWG), OPUS auto-submit, rover mode, admin panel (WiFi/modem/system), Cloudflare Tunnel, PWA.
+See PRD.md for full roadmap: cell hotspot, multi-rover tracking, file import
+(KML/DXF/DWG), OPUS auto-submit, rover mode, admin panel (WiFi/modem/system),
+Cloudflare Tunnel, PWA.

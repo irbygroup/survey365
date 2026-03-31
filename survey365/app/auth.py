@@ -115,3 +115,11 @@ async def require_admin(request: Request):
     valid = await validate_session_token(token)
     if not valid:
         raise HTTPException(status_code=401, detail="Session expired or invalid")
+
+
+async def is_admin_request(request: Request) -> bool:
+    """Return True when the request carries a valid admin session cookie."""
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        return False
+    return await validate_session_token(token)
