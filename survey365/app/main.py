@@ -31,6 +31,7 @@ from .routes import ntrip as ntrip_routes
 from .routes import projects as projects_routes
 from .routes import sites as sites_routes
 from .routes import status as status_routes
+from .routes import system as system_routes
 from .ws import live as ws_live
 
 # Configure logging
@@ -103,6 +104,7 @@ app.include_router(projects_routes.router)
 app.include_router(ntrip_routes.router)
 app.include_router(config_routes.router)
 app.include_router(auth_routes.router)
+app.include_router(system_routes.router)
 
 # --- Register WebSocket ---
 app.include_router(ws_live.router)

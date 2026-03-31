@@ -62,9 +62,10 @@ survey365/
   systemd/
     survey365.service    # Main app service (Group=dialout for serial)
     survey365-boot.service # Boot hardware check
+    survey365-update.service # Safe updater (boot/manual/timer target)
+    survey365-update.timer   # 5-minute periodic update check
   scripts/
-    update.sh            # Git pull + pip install + stamp version + restart
-    stamp-version.sh     # Inject git hash into HTML for cache busting
+    update.sh            # Safe fast-forward update + pip + service restart
   install.sh             # First-time Pi installer
   requirements.txt       # Python deps (pyubx2, pyserial, pynmeagps)
   data/
@@ -86,7 +87,7 @@ bash survey365/scripts/update.sh
 sudo bash survey365/install.sh --user=jaredirby
 ```
 
-This installs system deps, creates venv, inits DB, deploys udev rule + nginx + systemd, starts services.
+This installs system deps, creates venv, inits DB, deploys udev rule + nginx + systemd, enables the update timer, and starts services.
 
 ## Development
 
@@ -137,7 +138,7 @@ Default admin password: `survey365`
 - **Native GNSS control**: Direct serial I/O to F9P via pyubx2/pyserial. No relay services, no external base-station UI.
 - **Atomic mode transitions**: asyncio.Lock prevents concurrent mode changes.
 - **WebSocket + polling**: Frontend tries WebSocket first, falls back to HTTP polling after 3 failures.
-- **Cache busting**: `stamp-version.sh` injects git hash into HTML `?v=` params.
+- **Static assets**: nginx serves JS/CSS with revalidation headers, so deploys do not mutate tracked files.
 
 ## GNSS Architecture
 

@@ -1,0 +1,18 @@
+[Unit]
+Description=Survey365 Safe Update Check
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={user}
+WorkingDirectory={home}/rtk-surveying
+ExecStart={home}/rtk-surveying/survey365/scripts/update.sh --auto
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=survey365-update
+
+[Install]
+WantedBy=multi-user.target

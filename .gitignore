@@ -1,0 +1,18 @@
+# Python runtime artifacts
+__pycache__/
+*.py[cod]
+
+# Local environments and caches
+survey365/venv/
+.pytest_cache/
+.mypy_cache/
+
+# Survey365 runtime data
+survey365/data/
+
+# Local tooling and generated GNSS captures
+.claude/
+base-station/gnss-data/
+
+# macOS
+.DS_Store

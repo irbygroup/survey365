@@ -24,7 +24,7 @@ bash survey365/scripts/update.sh
 ssh jaredirby@<pi-host> "cd ~/rtk-surveying && bash survey365/scripts/update.sh"
 ```
 
-The update script: git pulls, installs pip deps if changed, stamps cache version into HTML, restarts the service.
+The update script fast-forwards to `origin/main`, installs pip deps if needed, and restarts the service. Automatic checks also run on boot and every 5 minutes on the Pi.
 
 ## First-Time Install
 

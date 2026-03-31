@@ -1,7 +1,7 @@
 [Unit]
 Description=Survey365 Field Controller
-After=network.target
-Wants=network.target
+After=network-online.target survey365-update.service
+Wants=network-online.target survey365-update.service
 
 [Service]
 Type=simple

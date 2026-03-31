@@ -4,10 +4,10 @@
 # Run: bash ~/rtk-surveying/survey365/scripts/update.sh
 #
 # What this does:
-#   1. Pulls latest code from origin/main
-#   2. Checks if requirements.txt changed and reinstalls if needed
-#   3. Restarts the survey365 service
-#   4. Prints the new version info
+#   1. Safely checks origin/main for updates
+#   2. Refuses to update when tracked files are dirty
+#   3. Installs updated Python dependencies when needed
+#   4. Restarts or starts the survey365 service when an update is applied
 
 set -euo pipefail
 
@@ -23,6 +23,16 @@ ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die()   { err "$*"; exit 1; }
+
+AUTO_MODE=false
+for arg in "$@"; do
+    case "$arg" in
+        --auto) AUTO_MODE=true ;;
+        *)
+            die "Unknown argument: $arg"
+            ;;
+    esac
+done
 
 # ── Locate repository root ─────────────────────────────────────────────
 # The script lives at survey365/scripts/update.sh, so repo root is two
@@ -44,37 +54,59 @@ fi
 info "Repository: $REPO_DIR"
 info "Survey365:  $SURVEY365_DIR"
 
+CURRENT_BRANCH=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)
+if [[ "$CURRENT_BRANCH" != "main" ]]; then
+    if [[ "$AUTO_MODE" == "true" ]]; then
+        warn "Auto-update skipped: repository is on branch '$CURRENT_BRANCH', not 'main'"
+        exit 0
+    fi
+    die "Refusing to update from branch '$CURRENT_BRANCH' (expected 'main')"
+fi
+
 # ── Record current state ───────────────────────────────────────────────
 PREV_COMMIT=$(git -C "$REPO_DIR" rev-parse HEAD)
 PREV_SHORT=$(git -C "$REPO_DIR" rev-parse --short HEAD)
 info "Current commit: $PREV_SHORT"
 
-# ── Check for local changes ────────────────────────────────────────────
-if [[ -n "$(git -C "$REPO_DIR" status --porcelain)" ]]; then
-    warn "Working directory has uncommitted changes:"
-    git -C "$REPO_DIR" status --short
-    warn "Proceeding with pull (changes will be preserved if no conflicts)..."
+# ── Refuse to run when tracked files are dirty ─────────────────────────
+DIRTY_STATUS="$(git -C "$REPO_DIR" status --porcelain --untracked-files=no)"
+if [[ -n "$DIRTY_STATUS" ]]; then
+    warn "Tracked files are dirty; refusing to update:"
+    printf '%s\n' "$DIRTY_STATUS"
+    if [[ "$AUTO_MODE" == "true" ]]; then
+        exit 0
+    fi
+    die "Clean the repository before updating"
 fi
 
-# ── Pull latest code ───────────────────────────────────────────────────
-info "Pulling latest code from origin/main..."
-
-if ! git -C "$REPO_DIR" pull origin main; then
-    die "git pull failed. Resolve conflicts and try again."
+# ── Check remote availability ──────────────────────────────────────────
+REMOTE_COMMIT="$(git -C "$REPO_DIR" ls-remote --exit-code --heads origin main 2>/dev/null | awk 'NR==1 {print $1}')"
+if [[ -z "$REMOTE_COMMIT" ]]; then
+    if [[ "$AUTO_MODE" == "true" ]]; then
+        warn "Auto-update skipped: origin/main is not reachable"
+        exit 0
+    fi
+    die "origin/main is not reachable"
 fi
+
+if [[ "$PREV_COMMIT" == "$REMOTE_COMMIT" ]]; then
+    ok "Already up to date ($PREV_SHORT)"
+    exit 0
+fi
+
+# ── Fetch and fast-forward ─────────────────────────────────────────────
+info "Fetching latest code from origin/main..."
+git -C "$REPO_DIR" fetch origin main
+git -C "$REPO_DIR" merge --ff-only FETCH_HEAD
 
 NEW_COMMIT=$(git -C "$REPO_DIR" rev-parse HEAD)
 NEW_SHORT=$(git -C "$REPO_DIR" rev-parse --short HEAD)
 
-if [[ "$PREV_COMMIT" == "$NEW_COMMIT" ]]; then
-    ok "Already up to date ($NEW_SHORT)"
-else
-    info "Updated: $PREV_SHORT -> $NEW_SHORT"
-    echo ""
-    info "Changes:"
-    git -C "$REPO_DIR" log --oneline "${PREV_COMMIT}..${NEW_COMMIT}"
-    echo ""
-fi
+info "Updated: $PREV_SHORT -> $NEW_SHORT"
+echo ""
+info "Changes:"
+git -C "$REPO_DIR" log --oneline "${PREV_COMMIT}..${NEW_COMMIT}"
+echo ""
 
 # ── Check if requirements changed ──────────────────────────────────────
 REQUIREMENTS_FILE="$SURVEY365_DIR/requirements.txt"
@@ -93,30 +125,34 @@ else
     ok "No code changes -- skipping pip install"
 fi
 
-# ── Check if systemd units changed ─────────────────────────────────────
+# ── Check if systemd/nginx files changed ───────────────────────────────
 if [[ "$PREV_COMMIT" != "$NEW_COMMIT" ]]; then
     if git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- survey365/systemd/ | grep -q .; then
-        warn "systemd service files changed -- re-run install.sh to update them:"
+        warn "systemd service files changed -- re-run install.sh to deploy them:"
         warn "  sudo bash $SURVEY365_DIR/install.sh"
     fi
 
     if git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- survey365/nginx/ | grep -q .; then
-        warn "nginx config changed -- re-run install.sh to update it:"
+        warn "nginx config changed -- re-run install.sh to deploy it:"
         warn "  sudo bash $SURVEY365_DIR/install.sh"
     fi
 fi
 
-# ── Stamp cache version into HTML files ─────────────────────────────────
-info "Stamping cache version..."
-bash "$SURVEY365_DIR/scripts/stamp-version.sh"
-
-# ── Restart survey365 service ───────────────────────────────────────────
-info "Restarting survey365 service..."
-
-if sudo systemctl restart survey365; then
-    ok "survey365 restarted"
+# ── Restart or start survey365 service ─────────────────────────────────
+if sudo systemctl is-active --quiet survey365; then
+    info "Restarting survey365 service..."
+    if sudo systemctl restart survey365; then
+        ok "survey365 restarted"
+    else
+        die "Failed to restart survey365"
+    fi
 else
-    die "Failed to restart survey365"
+    info "Starting survey365 service..."
+    if sudo systemctl start survey365; then
+        ok "survey365 started"
+    else
+        die "Failed to start survey365"
+    fi
 fi
 
 # Wait briefly and check status

@@ -11,7 +11,7 @@
 #   5. Deploys udev rule for F9P serial port
 #   6. Generates SSL certificate (if needed)
 #   7. Deploys nginx reverse proxy (port 80 -> Survey365)
-#   8. Deploys systemd services (survey365 + survey365-boot)
+#   8. Deploys systemd services (survey365 + boot/update helpers)
 #   9. Adds sudoers rules for service management
 #   10. Enables and starts everything
 
@@ -243,6 +243,8 @@ deploy_service() {
 
 deploy_service "$SURVEY365_DIR/systemd/survey365.service" "survey365.service"
 deploy_service "$SURVEY365_DIR/systemd/survey365-boot.service" "survey365-boot.service"
+deploy_service "$SURVEY365_DIR/systemd/survey365-update.service" "survey365-update.service"
+deploy_service "$SURVEY365_DIR/systemd/survey365-update.timer" "survey365-update.timer"
 
 systemctl daemon-reload
 ok "systemd daemon reloaded"
@@ -256,6 +258,7 @@ $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active survey365
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-update.service
 "
 
 echo "$SUDOERS_CONTENT" > "$SUDOERS_FILE"
@@ -268,15 +271,12 @@ else
     die "Invalid sudoers syntax -- removed $SUDOERS_FILE"
 fi
 
-# ── Step 10: Stamp cache version ───────────────────────────────────────
-info "Stamping cache version into HTML..."
-bash "$SURVEY365_DIR/scripts/stamp-version.sh"
-
-# ── Step 11: Enable and start services ─────────────────────────────────
+# ── Step 10: Enable and start services ─────────────────────────────────
 info "Enabling and starting services..."
 
 systemctl enable survey365.service
 systemctl enable survey365-boot.service
+systemctl enable survey365-update.timer
 
 if systemctl is-active --quiet survey365 2>/dev/null; then
     systemctl restart survey365
@@ -314,6 +314,8 @@ echo ""
 echo -e "  ${BLUE}Services:${NC}"
 echo -e "    survey365:       $(systemctl is-active survey365 2>/dev/null || echo 'unknown')"
 echo -e "    survey365-boot:  $(systemctl is-active survey365-boot 2>/dev/null || echo 'unknown')"
+echo -e "    survey365-update: $(systemctl is-active survey365-update 2>/dev/null || echo 'unknown')"
+echo -e "    survey365-update.timer: $(systemctl is-active survey365-update.timer 2>/dev/null || echo 'unknown')"
 echo -e "    nginx:           $(systemctl is-active nginx 2>/dev/null || echo 'unknown')"
 echo ""
 echo -e "  ${BLUE}Logs:${NC}"

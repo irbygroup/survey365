@@ -390,6 +390,67 @@
         <p x-show="configError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="configError"></p>
       </div>
 
+      <!-- ===== System Update ===== -->
+      <div class="s365-admin-section">
+        <h2>System Update</h2>
+        <p style="margin:0 0 12px 0; color:#64748b; font-size:14px;">
+          Survey365 checks for updates automatically on boot and every 5 minutes when the internet can reach <code>origin/main</code>.
+        </p>
+
+        <div x-show="updateLoading" style="text-align:center; padding:12px 0;">
+          <p aria-busy="true">Checking update status...</p>
+        </div>
+
+        <div x-show="!updateLoading" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:12px;">
+          <div>
+            <label>Branch</label>
+            <input type="text" :value="updateStatus.branch || 'main'" readonly style="background:#f8fafc; color:#0f172a;">
+          </div>
+          <div>
+            <label>Current Commit</label>
+            <input type="text" :value="updateStatus.current_short || '--'" readonly style="background:#f8fafc; color:#0f172a;">
+          </div>
+          <div>
+            <label>Latest Main</label>
+            <input type="text" :value="updateStatus.remote_short || (updateStatus.repo_reachable ? '--' : 'offline')" readonly style="background:#f8fafc; color:#0f172a;">
+          </div>
+          <div>
+            <label>Updater</label>
+            <input type="text" :value="updateStatus.update_in_progress ? 'Running' : (updateStatus.timer_enabled ? 'Enabled' : 'Disabled')" readonly style="background:#f8fafc; color:#0f172a;">
+          </div>
+        </div>
+
+        <p x-show="!updateLoading && updateStatus.update_available" style="color:var(--s365-blue); font-size:14px; margin:8px 0;">
+          Update available on <code>main</code>.
+        </p>
+        <p x-show="!updateLoading && !updateStatus.update_available && updateStatus.repo_reachable" style="color:#166534; font-size:14px; margin:8px 0;">
+          System is already on the latest <code>main</code> commit.
+        </p>
+        <p x-show="!updateLoading && !updateStatus.repo_reachable" style="color:#92400e; font-size:14px; margin:8px 0;">
+          Remote repository is not reachable right now. Automatic checks will retry.
+        </p>
+        <p x-show="updateStatus.dirty" style="color:var(--s365-red); font-size:14px; margin:8px 0;">
+          Auto-update is blocked because tracked files are dirty.
+        </p>
+        <template x-if="updateStatus.dirty && updateStatus.dirty_paths && updateStatus.dirty_paths.length > 0">
+          <div style="margin:8px 0 12px 0; padding:10px 12px; border-radius:8px; background:#fef2f2; color:#991b1b; font-family:monospace; font-size:13px;">
+            <template x-for="path in updateStatus.dirty_paths" :key="path">
+              <div x-text="path"></div>
+            </template>
+          </div>
+        </template>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button type="button" class="secondary" @click="loadUpdateStatus()" :disabled="updateLoading">Check Now</button>
+          <button type="button" @click="startUpdate()" :disabled="updateLoading || updateStatus.update_in_progress || updateStatus.dirty">
+            <span x-text="updateStatus.update_in_progress ? 'Updating...' : 'Update Now'"></span>
+          </button>
+        </div>
+
+        <p x-show="updateSuccess" style="color:var(--s365-green); margin-top:8px; font-size:14px;" x-text="updateSuccess"></p>
+        <p x-show="updateError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="updateError"></p>
+      </div>
+
       <!-- ===== Change Password ===== -->
       <div class="s365-admin-section">
         <h2>Change Password</h2>
@@ -461,6 +522,23 @@
         configSaved: false,
         configError: '',
 
+        /* System update */
+        updateStatus: {
+          branch: 'main',
+          current_short: '',
+          remote_short: '',
+          repo_reachable: true,
+          update_available: false,
+          update_in_progress: false,
+          timer_enabled: false,
+          dirty: false,
+          dirty_paths: []
+        },
+        updateLoading: false,
+        updateError: '',
+        updateSuccess: '',
+        _updatePollTimer: null,
+
         /* Password */
         pwForm: { current: '', new_password: '', confirm: '' },
         pwSuccess: false,
@@ -473,6 +551,8 @@
             this._loadSites();
             this._loadNtrip();
             this._loadConfig();
+            this.loadUpdateStatus();
+            this._updatePollTimer = setInterval(() => this.loadUpdateStatus(), 300000);
           }
         },
 
@@ -794,6 +874,46 @@
             }
           } catch (err) {
             this.configError = 'Network error: ' + err.message;
+          }
+        },
+
+        /* ======= System Update ======= */
+
+        async loadUpdateStatus() {
+          this.updateLoading = true;
+          this.updateError = '';
+          try {
+            var res = await fetch('/api/system/update-status');
+            if (res.ok) {
+              this.updateStatus = await res.json();
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              this.updateError = err.detail || err.error || 'Failed to load update status.';
+            }
+          } catch (err) {
+            this.updateError = 'Network error: ' + err.message;
+          }
+          this.updateLoading = false;
+        },
+
+        async startUpdate() {
+          this.updateError = '';
+          this.updateSuccess = '';
+          try {
+            var res = await fetch('/api/system/update', { method: 'POST' });
+            if (res.ok) {
+              var data = await res.json();
+              this.updateSuccess = data.message || 'Update started.';
+              await this.loadUpdateStatus();
+              setTimeout(() => this.loadUpdateStatus(), 3000);
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              this.updateError = err.detail || err.error || 'Failed to start update.';
+            }
+          } catch (err) {
+            this.updateError = 'Network error: ' + err.message;
           }
         },
 
