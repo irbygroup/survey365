@@ -193,6 +193,7 @@ async def init_db():
             """
             SELECT
                 COUNT(*) AS total,
+                SUM(CASE WHEN name = 'ALDOT' THEN 1 ELSE 0 END) AS custom_profile,
                 SUM(CASE WHEN name IN (
                     'ALDOT CORS - Mobile',
                     'ALDOT CORS - Daphne',
@@ -204,8 +205,9 @@ async def init_db():
         )
         row = await cursor.fetchone()
         total = int(row["total"] or 0)
+        custom_profile = int(row["custom_profile"] or 0)
         desired = int(row["desired"] or 0)
-        if total != 3 or desired != 3:
+        if custom_profile == 0 and (total != 3 or desired != 3):
             migration_file = MIGRATIONS_DIR / "005_aldot_cors_normalize.sql"
             if migration_file.exists():
                 sql = migration_file.read_text()
