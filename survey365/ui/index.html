@@ -415,7 +415,7 @@
        ============================================================ -->
   <template x-if="showEstablishPanel">
     <div>
-      <div class="s365-sheet-backdrop" @click="/* Don't close during establish */"></div>
+      <div class="s365-sheet-backdrop" @click.prevent=""></div>
       <div class="s365-sheet">
         <div class="s365-sheet-handle"></div>
         <div class="s365-establish-panel">
