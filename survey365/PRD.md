@@ -45,8 +45,9 @@ The primary interface is a full-screen map. Everything else is secondary.
 | Basemaps | **MapTiler** (street/satellite/topo) + offline tile cache | Works without internet via cached tiles |
 | Real-time | **WebSocket** (via FastAPI) | Live satellite status, rover positions, mode transitions |
 | File parsing | **GDAL/OGR** (KML, DXF, DWG, GeoJSON, Shapefile) | Industry-standard geospatial format support |
-| Reverse proxy | **Nginx** | Routes: / → Survey365, /rtkbase → RTKBase |
-| GNSS engine | **RTKBase** (existing) + **RTKLIB rtkrcv** | Base station services + rover positioning engine |
+| Reverse proxy | **Nginx** | Routes: / → Survey365 |
+| GNSS control | **Native** (pyubx2 + pyserial) | Direct F9P/LG290P serial control, no RTKBase dependency |
+| Rover engine | **RTKLIB rtkrcv** | Rover positioning for CORS establish mode |
 | Remote access | **Cloudflare Tunnel** (cloudflared) | Public HTTPS URL, no client install needed |
 | Process mgmt | **systemd** | All services as units, boot automation |
 
@@ -60,7 +61,6 @@ Phone / Laptop browser
     ┌────▼────────────────────────────────────┐
     │  Nginx (port 80)                        │
     │  ├── /           → Survey365 (:8080)    │
-    │  ├── /rtkbase    → RTKBase (:8000)      │
     │  └── /ws         → WebSocket (:8080)    │
     └────┬────────────────────────────────────┘
          │
@@ -71,6 +71,7 @@ Phone / Laptop browser
     │                                         │
     │  ├── /api/status      GNSS + NTRIP live │
     │  ├── /api/sites       Point DB CRUD     │
+    │  ├── /api/projects    Project CRUD      │
     │  ├── /api/mode        Operating mode    │
     │  ├── /api/rovers      Rover tracking    │
     │  ├── /api/layers      KML/DXF/DWG mgmt │
@@ -85,11 +86,11 @@ Phone / Laptop browser
     └────┬──────┬──────┬──────┬───────────────┘
          │      │      │      │
          ▼      ▼      ▼      ▼
-    RTKBase  rtkrcv  nmcli  mmcli
-    settings         +      + AT
-    .conf +        hostapd  port
-    systemctl      dnsmasq
-    + TCP:5015     nftables
+    F9P/LG290P  rtkrcv  nmcli  mmcli
+    direct       (rover  +      + AT
+    serial       mode)  hostapd  port
+    (pyubx2)           dnsmasq
+                       nftables
 ```
 
 ---
@@ -929,7 +930,7 @@ CREATE TABLE config (
 | Phase | Scope | Outcome |
 |-------|-------|---------|
 | **1** | Map UI + status + known point base + relative base + point DB + project organization + simple password auth | Field-usable base station with map interface. Project gate, switcher, project-scoped sites/sessions. **DONE.** |
-| **2** | CORS establish mode (rtkrcv) + NTRIP profile management | Auto-precise positioning from ALDOT CORS |
+| **2** | Remove RTKBase dependency + native GNSS control + NTRIP client/server + CORS establish mode | Direct F9P serial control, RTCM3 fan-out, NTRIP profiles, ALDOT CORS establish. See `RTKBASE-REMOVAL-PLAN.md`. |
 | **3** | File import (KML/DXF/DWG/GeoJSON/SHP) + layer management | Site plans and design files on the map |
 | **4** | OPUS pipeline (auto-trim RINEX + submit + result import) | Survey-grade accuracy automation |
 | **5** | Admin panel (WiFi, modem, IMEI, system health, config) | Complete device management from browser |
@@ -937,7 +938,7 @@ CREATE TABLE config (
 | **7** | System management (update, reboot, shutdown) + boot automation | Self-maintaining field unit |
 | **8** | Offline tile cache + PWA manifest + Find My Nail | Production polish for daily field use |
 | **9** | Multi-rover tracking on map + rover management | See all crew positions in real-time |
-| **10** | Rover mode (Pi as rover) + point marking | Full survey capability without Reach RX |
+| **10** | Rover mode (Pi as rover with LG290P or F9P) + LoRa radio link + point marking | Full survey capability, receiver-agnostic |
 | **11** | Cell hotspot (hostapd + NAT + dnsmasq) + captive portal | Self-contained field unit, no external WiFi needed |
 
 ---
@@ -950,11 +951,22 @@ survey365/
 ├── app/
 │   ├── main.py                 # FastAPI app, registers routes
 │   ├── db.py                   # SQLite + SpatiaLite connection
-│   ├── config.py               # App config loader
 │   ├── auth.py                 # Password check + session middleware
-│   ├── gnss.py                 # F9P serial communication (UBX parser)
-│   ├── rtkbase.py              # RTKBase settings.conf read/write + service control
-│   ├── rtkrcv.py               # RTKLIB rtkrcv process management
+│   ├── boot.py                 # Boot automation (hardware checks)
+│   ├── gnss/
+│   │   ├── __init__.py
+│   │   ├── manager.py          # GNSSManager: owns serial port, orchestrates
+│   │   ├── serial_reader.py    # Async serial reader, UBX/NMEA/RTCM3 frame detection
+│   │   ├── state.py            # GNSSState dataclass (position, sats, fix)
+│   │   ├── ublox.py            # UBlox backend: F9P config + parsing (pyubx2)
+│   │   ├── quectel.py          # Quectel backend: LG290P config + parsing (future)
+│   │   ├── rtcm_fanout.py      # Distribute RTCM3 to N outputs
+│   │   ├── ntrip_client.py     # NTRIP client (receive CORS corrections)
+│   │   ├── ntrip_push.py       # Push RTCM3 to remote caster (Emlid, rtk2go)
+│   │   ├── ntrip_caster.py     # Local NTRIP server for LAN rovers
+│   │   ├── rinex_logger.py     # RINEX file logging
+│   │   └── base_station.py     # Start/stop base mode orchestration
+│   ├── rtkrcv.py               # RTKLIB rtkrcv process management (rover/establish)
 │   ├── modem.py                # mmcli + AT command wrappers
 │   ├── wifi.py                 # nmcli wrappers
 │   ├── hotspot.py              # hostapd + dnsmasq + NAT management
@@ -1001,7 +1013,8 @@ survey365/
 │       └── manifest.json       # PWA manifest
 ├── migrations/
 │   ├── 001_initial.sql         # Core tables (sites, sessions, config, ntrip_profiles)
-│   └── 002_projects.sql        # Projects table + project_id on sites/sessions
+│   ├── 002_projects.sql        # Projects table + project_id on sites/sessions
+│   └── 003_gnss_config.sql     # GNSS and RTCM output configuration
 ├── systemd/
 │   ├── survey365.service       # Main app
 │   ├── survey365-hotspot.service # Hotspot management
