@@ -9,12 +9,11 @@ non-blockingly between sends.
 import asyncio
 import json
 import logging
-import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from ..gnss import gnss_state
+from ..gnss import gnss_manager, gnss_state
 
 logger = logging.getLogger("survey365.ws")
 
@@ -39,34 +38,33 @@ async def broadcast_event(event: dict):
 
 
 _broadcast_task: asyncio.Task | None = None
-_service_cache = {}
-_service_cache_time = 0
 
 
 async def _status_broadcast_loop():
     """Background loop: broadcast GNSS status to all clients every 1 second."""
-    global _service_cache, _service_cache_time
 
     while True:
         try:
             if _clients:
                 from ..routes.mode import get_mode_state
-                from ..rtkbase import get_service_status
 
                 gnss = await gnss_state.snapshot()
                 mode_state = get_mode_state()
 
-                now = time.monotonic()
-                if now - _service_cache_time > 5:
-                    _service_cache = await get_service_status()
-                    _service_cache_time = now
+                services = {
+                    "gnss_connected": gnss_manager.serial_reader.is_connected,
+                    "rtcm_outputs": len(gnss_manager.rtcm_fanout.outputs),
+                    "ntrip_push": gnss_manager.rtcm_fanout.has_output("ntrip_push"),
+                    "local_caster": gnss_manager.rtcm_fanout.has_output("local_caster"),
+                    "rinex_logging": gnss_manager.rtcm_fanout.has_output("rinex"),
+                }
 
                 message = json.dumps({
                     "type": "status",
                     "gnss": gnss,
                     "mode": mode_state["mode"],
                     "mode_label": mode_state["mode_label"],
-                    "services": _service_cache,
+                    "services": services,
                 })
 
                 dead = set()

@@ -176,16 +176,110 @@
       <!-- ===== NTRIP Profiles ===== -->
       <div class="s365-admin-section">
         <h2>NTRIP Profiles</h2>
-        <p style="color:#64748b; font-size:14px;">
-          NTRIP profiles are managed through RTKBase settings.
-          Access the RTKBase web interface for NTRIP configuration.
-        </p>
-        <a href="/rtkbase"
-           target="_blank"
-           style="display:inline-block; padding:10px 20px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; text-decoration:none; color:#1e293b; font-weight:600; font-size:14px;">
-          Open RTKBase Settings
-        </a>
+
+        <div x-show="ntripLoading" style="text-align:center; padding:20px;">
+          <p aria-busy="true">Loading profiles...</p>
+        </div>
+
+        <div x-show="!ntripLoading && ntripProfiles.length === 0" class="s365-empty">
+          <p>No NTRIP profiles configured.</p>
+        </div>
+
+        <table x-show="!ntripLoading && ntripProfiles.length > 0">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Host</th>
+              <th>Mountpoint</th>
+              <th>Default</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="p in ntripProfiles" :key="p.id">
+              <tr>
+                <td><strong x-text="p.name"></strong></td>
+                <td>
+                  <span style="font-size:12px; padding:2px 8px; border-radius:4px; background:#e2e8f0; white-space:nowrap;"
+                        x-text="p.type === 'outbound_caster' ? 'Outbound' : p.type === 'inbound_cors' ? 'CORS' : 'Local'"></span>
+                </td>
+                <td style="font-family:monospace; font-size:13px;" x-text="(p.host || '') + (p.port ? ':' + p.port : '')"></td>
+                <td style="font-family:monospace; font-size:13px;" x-text="p.mountpoint || '--'"></td>
+                <td x-text="p.is_default ? 'Yes' : ''"></td>
+                <td>
+                  <div class="admin-actions">
+                    <button @click="editNtrip(p)">Edit</button>
+                    <button class="delete" @click="deleteNtrip(p)">Delete</button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <button @click="openAddNtrip()"
+                style="margin-top:12px; padding:10px 20px; background:var(--s365-blue); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;">
+          Add NTRIP Profile
+        </button>
       </div>
+
+      <!-- ===== Add/Edit NTRIP Profile Form ===== -->
+      <template x-if="showNtripForm">
+        <div class="s365-admin-section">
+          <h2 x-text="editingNtrip ? 'Edit NTRIP Profile' : 'Add NTRIP Profile'"></h2>
+          <form @submit.prevent="saveNtrip()" class="s365-admin-form">
+            <label for="ntrip-name">Profile Name</label>
+            <input type="text" id="ntrip-name" x-model="ntripForm.name" required placeholder="e.g. Emlid Caster">
+
+            <label for="ntrip-type">Type</label>
+            <select id="ntrip-type" x-model="ntripForm.type" required>
+              <option value="outbound_caster">Outbound Caster (push corrections)</option>
+              <option value="inbound_cors">CORS Source (receive corrections)</option>
+              <option value="local_caster">Local Caster (serve to LAN)</option>
+            </select>
+
+            <div style="display:grid; grid-template-columns:2fr 1fr; gap:12px;">
+              <div>
+                <label for="ntrip-host">Host</label>
+                <input type="text" id="ntrip-host" x-model="ntripForm.host" placeholder="e.g. caster.emlid.com">
+              </div>
+              <div>
+                <label for="ntrip-port">Port</label>
+                <input type="number" id="ntrip-port" x-model="ntripForm.port" placeholder="2101" min="1" max="65535">
+              </div>
+            </div>
+
+            <label for="ntrip-mount">Mountpoint</label>
+            <input type="text" id="ntrip-mount" x-model="ntripForm.mountpoint" placeholder="e.g. SURVEY365">
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label for="ntrip-user">Username</label>
+                <input type="text" id="ntrip-user" x-model="ntripForm.username" placeholder="Optional">
+              </div>
+              <div>
+                <label for="ntrip-pass">Password</label>
+                <input type="text" id="ntrip-pass" x-model="ntripForm.password" placeholder="Optional">
+              </div>
+            </div>
+
+            <label style="display:flex; align-items:center; gap:8px; margin:12px 0;">
+              <input type="checkbox" x-model="ntripForm.is_default" style="width:auto; height:auto;">
+              Set as default for this type
+            </label>
+
+            <label for="ntrip-notes">Notes</label>
+            <input type="text" id="ntrip-notes" x-model="ntripForm.notes" placeholder="Optional notes">
+
+            <div style="display:flex; gap:8px; margin-top:8px;">
+              <button type="submit" x-text="editingNtrip ? 'Update' : 'Add Profile'"></button>
+              <button type="button" class="secondary" @click="closeNtripForm()">Cancel</button>
+            </div>
+          </form>
+          <p x-show="ntripFormError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="ntripFormError"></p>
+        </div>
+      </template>
 
       <!-- ===== Config Settings ===== -->
       <div class="s365-admin-section">
@@ -261,6 +355,14 @@
         siteForm: { name: '', lat: '', lon: '', height: '', source: 'manual', accuracy_h: '', accuracy_v: '', notes: '' },
         siteFormError: '',
 
+        /* NTRIP */
+        ntripProfiles: [],
+        ntripLoading: false,
+        showNtripForm: false,
+        editingNtrip: null,
+        ntripForm: { name: '', type: 'outbound_caster', host: '', port: '', mountpoint: '', username: '', password: '', is_default: false, notes: '' },
+        ntripFormError: '',
+
         /* Config */
         config: { maptiler_key: '', default_lat: 30.69, default_lon: -88.05, default_zoom: 12, auto_resume: false },
         configSaved: false,
@@ -276,6 +378,7 @@
           if (this.authenticated) {
             await this._loadProjects();
             this._loadSites();
+            this._loadNtrip();
             this._loadConfig();
           }
         },
@@ -420,6 +523,112 @@
               await this._loadSites();
             } else {
               alert('Failed to delete point.');
+            }
+          } catch (err) {
+            alert('Network error: ' + err.message);
+          }
+        },
+
+        /* ======= NTRIP CRUD ======= */
+
+        async _loadNtrip() {
+          this.ntripLoading = true;
+          try {
+            var res = await fetch('/api/ntrip');
+            if (res.ok) {
+              var data = await res.json();
+              this.ntripProfiles = data.profiles || [];
+            }
+          } catch (_) {}
+          this.ntripLoading = false;
+        },
+
+        openAddNtrip() {
+          this.editingNtrip = null;
+          this.ntripForm = { name: '', type: 'outbound_caster', host: '', port: '', mountpoint: '', username: '', password: '', is_default: false, notes: '' };
+          this.ntripFormError = '';
+          this.showNtripForm = true;
+        },
+
+        editNtrip(profile) {
+          this.editingNtrip = profile;
+          this.ntripForm = {
+            name: profile.name || '',
+            type: profile.type || 'outbound_caster',
+            host: profile.host || '',
+            port: profile.port || '',
+            mountpoint: profile.mountpoint || '',
+            username: profile.username || '',
+            password: profile.password || '',
+            is_default: profile.is_default || false,
+            notes: profile.notes || ''
+          };
+          this.ntripFormError = '';
+          this.showNtripForm = true;
+        },
+
+        closeNtripForm() {
+          this.showNtripForm = false;
+          this.editingNtrip = null;
+          this.ntripFormError = '';
+        },
+
+        async saveNtrip() {
+          this.ntripFormError = '';
+          if (!this.ntripForm.name || !this.ntripForm.type) {
+            this.ntripFormError = 'Name and type are required.';
+            return;
+          }
+
+          var body = {
+            name: this.ntripForm.name.trim(),
+            type: this.ntripForm.type,
+            is_default: this.ntripForm.is_default || false
+          };
+          if (this.ntripForm.host) body.host = this.ntripForm.host.trim();
+          if (this.ntripForm.port) body.port = parseInt(this.ntripForm.port);
+          if (this.ntripForm.mountpoint) body.mountpoint = this.ntripForm.mountpoint.trim();
+          if (this.ntripForm.username) body.username = this.ntripForm.username.trim();
+          if (this.ntripForm.password) body.password = this.ntripForm.password;
+          if (this.ntripForm.notes) body.notes = this.ntripForm.notes.trim();
+
+          try {
+            var url, method;
+            if (this.editingNtrip) {
+              url = '/api/ntrip/' + this.editingNtrip.id;
+              method = 'PUT';
+            } else {
+              url = '/api/ntrip';
+              method = 'POST';
+            }
+
+            var res = await fetch(url, {
+              method: method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+
+            if (res.ok) {
+              this.closeNtripForm();
+              await this._loadNtrip();
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              this.ntripFormError = err.error || err.detail || 'Failed to save profile.';
+            }
+          } catch (err) {
+            this.ntripFormError = 'Network error: ' + err.message;
+          }
+        },
+
+        async deleteNtrip(profile) {
+          if (!confirm('Delete NTRIP profile "' + profile.name + '"?')) return;
+          try {
+            var res = await fetch('/api/ntrip/' + profile.id, { method: 'DELETE' });
+            if (res.ok) {
+              await this._loadNtrip();
+            } else {
+              alert('Failed to delete profile.');
             }
           } catch (err) {
             alert('Network error: ' + err.message);

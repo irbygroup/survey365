@@ -160,6 +160,20 @@ async def init_db():
                     (str(default_pid),),
                 )
 
+        # --- Migration 003: GNSS config keys ---
+        cursor = await db.execute(
+            "SELECT value FROM config WHERE key = 'gnss_port'"
+        )
+        if await cursor.fetchone() is None:
+            migration_file = MIGRATIONS_DIR / "003_gnss_config.sql"
+            if migration_file.exists():
+                sql = migration_file.read_text()
+                for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+                    try:
+                        await db.execute(stmt)
+                    except Exception:
+                        pass
+
         await db.commit()
 
 

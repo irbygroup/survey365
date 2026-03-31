@@ -14,8 +14,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from ..db import get_active_project_id, get_db
-from ..gnss import gnss_state
-from ..rtkbase import start_base_services, stop_base_services, write_position
+from ..gnss import gnss_manager, gnss_state
+from ..gnss.base_station import start_base, stop_base
 from ..ws.live import broadcast_event
 
 logger = logging.getLogger("survey365.mode")
@@ -82,8 +82,8 @@ async def start_known_base(req: KnownBaseRequest):
     """Start Known Point Base mode.
 
     1. Look up site by ID
-    2. Write position to RTKBase settings.conf
-    3. Restart base station services
+    2. Configure F9P as base station at site coordinates
+    3. Start RTCM outputs (RINEX, local caster)
     4. Create session record
     5. Broadcast mode change via WebSocket
     """
@@ -116,12 +116,9 @@ async def start_known_base(req: KnownBaseRequest):
         # End previous session if active
         await _end_current_session()
 
-        # Write position to RTKBase
+        # Configure GNSS receiver and start RTCM outputs
         height = site["height"] if site["height"] is not None else 0.0
-        await write_position(site["lat"], site["lon"], height)
-
-        # Restart services
-        await start_base_services()
+        await start_base(gnss_manager, site["lat"], site["lon"], height, outputs=["rinex", "local_caster"])
 
         # Create session record
         active_pid = await get_active_project_id()
@@ -171,7 +168,7 @@ async def start_relative_base(req: RelativeBaseRequest = RelativeBaseRequest()):
     2. Set mode with establishing=True
     3. Background task collects positions for duration_seconds
     4. Compute mean position
-    5. Write to RTKBase, restart services
+    5. Configure F9P as base, start RTCM outputs
     6. Save averaged point as site
     """
     global _establishing, _establish_task
@@ -323,11 +320,8 @@ async def _run_relative_base(duration: int):
             "height": avg_height,
         }
 
-        # Write position to RTKBase
-        await write_position(avg_lat, avg_lon, avg_height)
-
-        # Start services
-        await start_base_services()
+        # Configure GNSS receiver and start RTCM outputs
+        await start_base(gnss_manager, avg_lat, avg_lon, avg_height, outputs=["rinex", "local_caster"])
 
         # Create session record
         async with get_db() as db:
@@ -367,7 +361,7 @@ async def stop_mode():
     """Stop current mode and set to IDLE.
 
     1. End current session
-    2. Stop NTRIP services (str2str_tcp stays running)
+    2. Stop RTCM outputs and disable base mode on receiver
     3. Set mode to idle
     4. Broadcast via WebSocket
     """
@@ -390,8 +384,8 @@ async def stop_mode():
     async with _mode_lock:
         await _end_current_session()
 
-        # Stop NTRIP services
-        await stop_base_services()
+        # Stop RTCM outputs and disable base mode
+        await stop_base(gnss_manager)
 
         # Update state
         _current_mode = "idle"

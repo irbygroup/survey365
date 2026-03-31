@@ -1,20 +1,19 @@
 [Unit]
-Description=Survey365 Boot Tasks (antenna voltage, auto-resume)
-After=str2str_tcp.service
-Wants=str2str_tcp.service
+Description=Survey365 Boot Tasks (hardware check)
+After=network.target
 
 [Service]
 Type=oneshot
 ExecStart={home}/rtk-surveying/survey365/venv/bin/python3 {home}/rtk-surveying/survey365/app/boot.py
 RemainAfterExit=yes
 
-# Environment for boot script to find config and database
-Environment=RTKBASE_DIR={home}/rtkbase
+# Environment
 Environment=SURVEY365_DB={home}/rtk-surveying/survey365/data/survey365.db
-Environment=SURVEY365_DIR={home}/rtk-surveying/survey365
+Environment=GNSS_PORT=/dev/ttyGNSS
 
-# Runs as root for serial port access to F9P
-User=root
+# Run as target user (dialout group provides serial access)
+User={user}
+Group=dialout
 
 # Logging
 StandardOutput=journal

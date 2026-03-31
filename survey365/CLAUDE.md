@@ -1,13 +1,14 @@
 # Survey365
 
-Map-centric field operations controller for RTK GNSS base stations. Runs on a Raspberry Pi 4 alongside RTKBase.
+Map-centric field operations controller for RTK GNSS base stations. Runs on a Raspberry Pi 4 with native GNSS control (no RTKBase dependency).
 
 ## Tech Stack
 
 - **Backend**: FastAPI (Python 3.13), SQLite + SpatiaLite, async
 - **Frontend**: MapLibre GL JS v4, HTMX, Alpine.js, Pico.css — no build step
 - **Map tiles**: MapTiler (key stored in config DB)
-- **Reverse proxy**: nginx (port 80 → Survey365 :8080 + RTKBase :8000)
+- **GNSS control**: Native (pyubx2 + pyserial) — direct F9P serial I/O
+- **Reverse proxy**: nginx (port 80 → Survey365 :8080)
 - **Process manager**: systemd
 
 ## Project Structure
@@ -18,9 +19,20 @@ survey365/
     main.py              # FastAPI entry point, lifespan, router registration
     db.py                # SQLite + SpatiaLite connection, config helpers
     auth.py              # PBKDF2 password hashing, session cookies
-    gnss.py              # UBX parser, reads F9P data from TCP:5015
-    rtkbase.py           # Read/write RTKBase settings.conf, systemctl control
-    boot.py              # Boot automation (F9P antenna voltage enable)
+    boot.py              # Boot automation (hardware check)
+    gnss/
+      __init__.py        # Package exports: gnss_manager, gnss_state
+      manager.py         # GNSSManager: owns serial port, dispatches frames
+      serial_reader.py   # Async serial reader with UBX/NMEA/RTCM3 frame detection
+      state.py           # GNSSState dataclass (position, sats, fix)
+      ublox.py           # UBloxBackend: UBX parser + F9P config commands
+      quectel.py         # QuectelBackend: LG290P stub (future)
+      rtcm_fanout.py     # Distributes RTCM3 bytes to registered outputs
+      base_station.py    # Start/stop base mode with RTCM output management
+      ntrip_client.py    # NTRIP client for CORS corrections
+      ntrip_push.py      # Push RTCM3 to remote caster (Emlid, rtk2go)
+      ntrip_caster.py    # Local NTRIP server for LAN rovers
+      rinex_logger.py    # Raw data file logging for RINEX conversion
     routes/
       status.py          # GET /api/status, GET /api/satellites
       mode.py            # POST /api/mode/{known-base,relative-base,stop,resume}
@@ -32,7 +44,7 @@ survey365/
       live.py            # WebSocket /ws/live — per-client queues, 1Hz status broadcast
   ui/
     index.html           # Main map interface (Alpine.js root component)
-    admin.html           # Admin panel (sites, config, password)
+    admin.html           # Admin panel (sites, NTRIP profiles, config, password)
     login.html           # Standalone login page
     js/
       map-core.js        # MapLibre map init, basemaps, markers, accuracy circle
@@ -43,18 +55,21 @@ survey365/
       survey365.css      # All custom styles, mobile-first, high contrast
   migrations/
     001_initial.sql      # DB schema (sites, sessions, config, ntrip_profiles)
+    002_projects.sql     # Projects table + project_id columns
+    003_gnss_config.sql  # GNSS and RTCM output config keys
   nginx/
     survey365.conf       # Reverse proxy config
   systemd/
-    survey365.service    # Main app service
-    survey365-boot.service # Boot automation (antenna voltage)
+    survey365.service    # Main app service (Group=dialout for serial)
+    survey365-boot.service # Boot hardware check
   scripts/
     update.sh            # Git pull + pip install + stamp version + restart
     stamp-version.sh     # Inject git hash into HTML for cache busting
   install.sh             # First-time Pi installer
-  requirements.txt       # Python deps (no bcrypt — uses stdlib PBKDF2)
+  requirements.txt       # Python deps (pyubx2, pyserial, pynmeagps)
   data/
     survey365.db         # SQLite database (created by install, gitignored)
+    rinex/               # Raw GNSS data logs (gitignored)
 ```
 
 ## Deploy
@@ -71,7 +86,7 @@ bash survey365/scripts/update.sh
 sudo bash survey365/install.sh --user=jaredirby
 ```
 
-This installs system deps, creates venv, inits DB, moves RTKBase to port 8000, deploys nginx + systemd, starts services.
+This installs system deps, creates venv, inits DB, deploys udev rule + nginx + systemd, starts services.
 
 ## Development
 
@@ -83,7 +98,7 @@ pip install -r requirements.txt
 SURVEY365_DB=./data/survey365.db uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
-The GNSS reader gracefully handles connection failures — it retries TCP:5015 every 2 seconds.
+The GNSS manager gracefully handles connection failures — it retries the serial port every 2 seconds.
 
 ## API Overview
 
@@ -102,6 +117,10 @@ All routes return JSON. No auth required for field endpoints (status, mode, site
 | POST | /api/sites | Admin | Create site |
 | PUT | /api/sites/:id | Admin | Update site |
 | DELETE | /api/sites/:id | Admin | Delete site |
+| GET | /api/ntrip | Admin | List NTRIP profiles |
+| POST | /api/ntrip | Admin | Create NTRIP profile |
+| PUT | /api/ntrip/:id | Admin | Update NTRIP profile |
+| DELETE | /api/ntrip/:id | Admin | Delete NTRIP profile |
 | GET | /api/config/public | No | MapTiler key + defaults |
 | GET | /api/config | Admin | All config |
 | PUT | /api/config | Admin | Update config |
@@ -115,13 +134,31 @@ Default admin password: `survey365`
 - **No bcrypt**: passlib bcrypt is broken on Python 3.13. Uses stdlib `hashlib.pbkdf2_hmac` instead.
 - **No SpatiaLite hard dep**: All spatial ops wrapped in try/except. Falls back to equirectangular distance calculation.
 - **Single process**: All state (GNSS, mode, WS clients) is in-process. No Redis/IPC needed.
+- **Native GNSS control**: Direct serial I/O to F9P via pyubx2/pyserial. No RTKBase, no str2str, no settings.conf.
 - **Atomic mode transitions**: asyncio.Lock prevents concurrent mode changes.
-- **WebSocket + polling**: Frontend tries WebSocket first, falls back to HTTP polling after 3 failures. Tailscale Serve's HTTP/2 breaks browser WebSocket.
-- **Cache busting**: `stamp-version.sh` injects git hash into HTML `?v=` params. Run by update.sh and install.sh.
+- **WebSocket + polling**: Frontend tries WebSocket first, falls back to HTTP polling after 3 failures.
+- **Cache busting**: `stamp-version.sh` injects git hash into HTML `?v=` params.
+
+## GNSS Architecture
+
+```
+/dev/ttyGNSS (F9P USB)
+       |
+  GNSSManager (app/gnss/manager.py)
+       |
+       +-- UBloxBackend: UBX parse + config
+       |
+       +-- Reads serial -> GNSSState (position, sats, fix)
+       |
+       +-- RTCM3 frames -> RTCMFanout:
+             +-- RINEXLogger (file output)
+             +-- NTRIPPush (remote caster)
+             +-- NTRIPCaster (local server)
+```
 
 ## Phase 1 Scope (current)
 
-Map UI, GNSS status, Known Point Base, Relative Base, Sites DB, simple password auth.
+Map UI, GNSS status, Known Point Base, Relative Base, Sites DB, NTRIP profile management, simple password auth.
 
 ## Future Phases
 

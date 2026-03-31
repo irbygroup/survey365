@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .auth import ensure_default_password
 from .db import init_db
-from .gnss import gnss_reader
+from .gnss import gnss_manager
 from .routes import auth as auth_routes
 from .routes import config as config_routes
 from .routes import mode as mode_routes
@@ -55,8 +55,8 @@ async def lifespan(app: FastAPI):
     # Set default password on first boot
     await ensure_default_password()
 
-    # Start GNSS reader background task
-    gnss_reader.start()
+    # Start GNSS manager (serial reader + backend)
+    await gnss_manager.start()
 
     # Start WebSocket status broadcast
     ws_live.start_broadcast()
@@ -71,8 +71,8 @@ async def lifespan(app: FastAPI):
     # Stop WebSocket broadcast
     await ws_live.stop_broadcast()
 
-    # Stop GNSS reader
-    await gnss_reader.stop()
+    # Stop GNSS manager
+    await gnss_manager.stop()
 
     logger.info("Survey365 stopped")
 

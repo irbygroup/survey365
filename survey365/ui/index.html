@@ -234,15 +234,18 @@
     <div class="s365-detail-section">
       <div class="s365-detail-title">Services</div>
       <div class="s365-detail-grid">
-        <span class="s365-detail-label">TCP Stream</span>
-        <span class="s365-svc-badge" :class="services.str2str_tcp ? 'active' : 'inactive'"
-              x-text="services.str2str_tcp ? 'Running' : 'Stopped'"></span>
-        <span class="s365-detail-label">NTRIP Out</span>
-        <span class="s365-svc-badge" :class="services.str2str_ntrip_A ? 'active' : 'inactive'"
-              x-text="services.str2str_ntrip_A ? 'Running' : 'Stopped'"></span>
+        <span class="s365-detail-label">GNSS Serial</span>
+        <span class="s365-svc-badge" :class="services.gnss_connected ? 'active' : 'inactive'"
+              x-text="services.gnss_connected ? 'Connected' : 'Disconnected'"></span>
+        <span class="s365-detail-label">NTRIP Push</span>
+        <span class="s365-svc-badge" :class="services.ntrip_push ? 'active' : 'inactive'"
+              x-text="services.ntrip_push ? 'Active' : 'Off'"></span>
         <span class="s365-detail-label">Local Caster</span>
-        <span class="s365-svc-badge" :class="services.str2str_local_ntrip_caster ? 'active' : 'inactive'"
-              x-text="services.str2str_local_ntrip_caster ? 'Running' : 'Stopped'"></span>
+        <span class="s365-svc-badge" :class="services.local_caster ? 'active' : 'inactive'"
+              x-text="services.local_caster ? 'Active' : 'Off'"></span>
+        <span class="s365-detail-label">RINEX Log</span>
+        <span class="s365-svc-badge" :class="services.rinex_logging ? 'active' : 'inactive'"
+              x-text="services.rinex_logging ? 'Recording' : 'Off'"></span>
       </div>
     </div>
   </div>

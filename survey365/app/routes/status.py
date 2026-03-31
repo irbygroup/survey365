@@ -9,8 +9,7 @@ import time
 
 from fastapi import APIRouter
 
-from ..gnss import gnss_state
-from ..rtkbase import get_service_status
+from ..gnss import gnss_manager, gnss_state
 
 router = APIRouter(prefix="/api", tags=["status"])
 
@@ -25,8 +24,15 @@ async def get_status():
     from .mode import get_mode_state
 
     gnss = await gnss_state.snapshot()
-    services = await get_service_status()
     mode_state = get_mode_state()
+
+    services = {
+        "gnss_connected": gnss_manager.serial_reader.is_connected,
+        "rtcm_outputs": len(gnss_manager.rtcm_fanout.outputs),
+        "ntrip_push": gnss_manager.rtcm_fanout.has_output("ntrip_push"),
+        "local_caster": gnss_manager.rtcm_fanout.has_output("local_caster"),
+        "rinex_logging": gnss_manager.rtcm_fanout.has_output("rinex"),
+    }
 
     return {
         "mode": mode_state["mode"],
