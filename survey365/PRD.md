@@ -927,7 +927,7 @@ CREATE TABLE config (
 | Phase | Scope | Outcome |
 |-------|-------|---------|
 | **1** | Map UI + status + known point base + relative base + point DB + project organization + simple password auth | Field-usable base station with map interface. Project gate, switcher, project-scoped sites/sessions. **DONE.** |
-| **2** | Native GNSS control + NTRIP client/server + CORS establish mode | Direct F9P serial control, RTCM3 fan-out, NTRIP profiles, ALDOT CORS establish. See `RTKBASE-REMOVAL-PLAN.md`. |
+| **2** | Native GNSS control + NTRIP client/server + CORS establish mode | Direct F9P serial control, RTCM3 fan-out, NTRIP profiles, ALDOT CORS establish. See `NATIVE-GNSS-ARCHITECTURE.md`. |
 | **3** | File import (KML/DXF/DWG/GeoJSON/SHP) + layer management | Site plans and design files on the map |
 | **4** | OPUS pipeline (auto-trim RINEX + submit + result import) | Survey-grade accuracy automation |
 | **5** | Admin panel (WiFi, modem, IMEI, system health, config) | Complete device management from browser |
