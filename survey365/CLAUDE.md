@@ -1,6 +1,6 @@
 # Survey365
 
-Map-centric field operations controller for RTK GNSS base stations. Runs on a Raspberry Pi 4 with native GNSS control (no RTKBase dependency).
+Map-centric field operations controller for RTK GNSS base stations. Runs on a Raspberry Pi 4 with native GNSS control.
 
 ## Tech Stack
 
@@ -134,7 +134,7 @@ Default admin password: `survey365`
 - **No bcrypt**: passlib bcrypt is broken on Python 3.13. Uses stdlib `hashlib.pbkdf2_hmac` instead.
 - **No SpatiaLite hard dep**: All spatial ops wrapped in try/except. Falls back to equirectangular distance calculation.
 - **Single process**: All state (GNSS, mode, WS clients) is in-process. No Redis/IPC needed.
-- **Native GNSS control**: Direct serial I/O to F9P via pyubx2/pyserial. No RTKBase, no str2str, no settings.conf.
+- **Native GNSS control**: Direct serial I/O to F9P via pyubx2/pyserial. No relay services, no external base-station UI.
 - **Atomic mode transitions**: asyncio.Lock prevents concurrent mode changes.
 - **WebSocket + polling**: Frontend tries WebSocket first, falls back to HTTP polling after 3 failures.
 - **Cache busting**: `stamp-version.sh` injects git hash into HTML `?v=` params.

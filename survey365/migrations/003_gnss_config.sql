@@ -1,5 +1,5 @@
 -- Migration 003: GNSS configuration keys
--- Moves GNSS and output config from RTKBase settings.conf to Survey365 DB.
+-- Stores GNSS and RTCM output config in the Survey365 database.
 
 -- GNSS receiver configuration
 INSERT OR IGNORE INTO config (key, value) VALUES ('gnss_port', '/dev/ttyGNSS');

@@ -1,8 +1,7 @@
 """
 Base station controller: start/stop base mode with RTCM output management.
 
-Replaces app/rtkbase.py. No settings.conf, no systemctl calls.
-All configuration goes directly to the F9P via UBX commands.
+All configuration goes directly to the receiver via UBX commands.
 """
 
 import logging
@@ -34,10 +33,16 @@ async def start_base(
                  Defaults to ["rinex"] if None.
     """
     if outputs is None:
-        outputs = ["rinex"]
+        outputs = await _resolve_outputs()
 
     # Configure receiver as fixed-position base
-    await manager.configure_base(lat, lon, height)
+    rtcm_message_spec = await get_config("rtcm_messages")
+    await manager.configure_base(
+        lat,
+        lon,
+        height,
+        rtcm_message_spec=rtcm_message_spec,
+    )
 
     # Start requested outputs
     if "rinex" in outputs:
@@ -109,3 +114,25 @@ async def _get_ntrip_profile(profile_type: str) -> dict | None:
             "username": row["username"],
             "password": row["password"],
         }
+
+
+async def _resolve_outputs() -> list[str]:
+    """Resolve enabled RTCM outputs from config and default profiles."""
+    outputs: list[str] = []
+
+    if _config_bool(await get_config("rinex_enabled"), default=True):
+        outputs.append("rinex")
+
+    if _config_bool(await get_config("local_caster_enabled"), default=False):
+        outputs.append("local_caster")
+
+    if await _get_ntrip_profile("outbound_caster"):
+        outputs.append("ntrip_push")
+
+    return outputs
+
+
+def _config_bool(value: str | None, *, default: bool) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

@@ -23,7 +23,7 @@ class QuectelBackend:
     async def configure_rover_mode(self, serial_reader):
         raise NotImplementedError("LG290P support coming soon")
 
-    async def enable_rtcm_output(self, serial_reader):
+    async def enable_rtcm_output(self, serial_reader, message_spec: str | None = None):
         raise NotImplementedError("LG290P support coming soon")
 
     async def disable_rtcm_output(self, serial_reader):

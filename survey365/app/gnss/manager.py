@@ -44,6 +44,7 @@ class GNSSManager:
 
     async def start(self):
         """Open serial port, configure receiver, start read loop."""
+        await self._load_runtime_config()
         self._running = True
         self._read_task = asyncio.create_task(self._run_loop())
         logger.info("GNSS manager started")
@@ -64,10 +65,19 @@ class GNSSManager:
         await self.state.set_connected(False)
         logger.info("GNSS manager stopped")
 
-    async def configure_base(self, lat: float, lon: float, height: float):
+    async def configure_base(
+        self,
+        lat: float,
+        lon: float,
+        height: float,
+        rtcm_message_spec: str | None = None,
+    ):
         """Configure receiver as fixed-position base station."""
         await self.backend.configure_base_mode(self.serial_reader, lat, lon, height)
-        await self.backend.enable_rtcm_output(self.serial_reader)
+        await self.backend.enable_rtcm_output(
+            self.serial_reader,
+            message_spec=rtcm_message_spec,
+        )
 
     async def configure_rover(self):
         """Configure receiver for rover mode (disable TMODE3)."""
@@ -120,6 +130,45 @@ class GNSSManager:
         finally:
             await self.serial_reader.close()
             await self.state.set_connected(False)
+
+    async def _load_runtime_config(self):
+        """Load GNSS port/baud/backend from config DB before opening serial."""
+        from ..db import get_config
+
+        port = await get_config("gnss_port")
+        baud = await get_config("gnss_baud")
+        backend_name = await get_config("gnss_backend")
+
+        self.serial_reader.port = (
+            (port or "").strip()
+            or os.environ.get("GNSS_PORT")
+            or self.serial_reader.port
+        )
+
+        if baud:
+            try:
+                self.serial_reader.baud = int(baud)
+            except ValueError:
+                logger.warning("Invalid gnss_baud config value: %r", baud)
+
+        selected_backend = (
+            (backend_name or "").strip().lower()
+            or os.environ.get("GNSS_BACKEND", "ublox").strip().lower()
+        )
+
+        if selected_backend == "ublox" and not isinstance(self.backend, UBloxBackend):
+            self.backend = UBloxBackend()
+        elif selected_backend != "ublox" and self.backend.__class__.__name__ != "QuectelBackend":
+            from .quectel import QuectelBackend
+
+            self.backend = QuectelBackend()
+
+        logger.info(
+            "GNSS runtime config loaded: port=%s baud=%s backend=%s",
+            self.serial_reader.port,
+            self.serial_reader.baud,
+            selected_backend,
+        )
 
 
 # Module-level singleton

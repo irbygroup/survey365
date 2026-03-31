@@ -1,7 +1,7 @@
 """
 GNSS package: native serial control for F9P (and future LG290P).
 
-Replaces the old TCP:5015 → str2str → RTKBase chain with direct serial I/O.
+Uses direct serial I/O instead of an external relay/UI stack.
 """
 
 from .manager import gnss_manager

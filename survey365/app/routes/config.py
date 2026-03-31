@@ -7,11 +7,11 @@ Admin-only access for full config. Public endpoint for MapTiler key
 Known config keys and their types:
 - maptiler_key (str): MapTiler API key for basemaps
 - auto_resume (bool as str): Resume last session on boot
-- antenna_voltage_on_boot (bool as str): Enable antenna voltage at startup
-- f9p_update_rate (int as str): GNSS update rate in Hz
-- default_lat (float as str): Default map center latitude
-- default_lon (float as str): Default map center longitude
-- default_zoom (int as str): Default map zoom level
+- default_lat/default_lon/default_zoom: default map view
+- gnss_port/gnss_baud/gnss_backend: receiver connection settings
+- rtcm_messages: RTCM output selection, e.g. "1005(10),1077,1087,1097,1127,1230(10)"
+- rinex_enabled/rinex_rotate_hours/rinex_data_dir: raw logging settings
+- local_caster_enabled/local_caster_port/local_caster_mountpoint: local NTRIP caster
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -32,11 +32,19 @@ SECRET_KEYS = {"web_password_hash", "session_secret"}
 KNOWN_KEYS = {
     "maptiler_key",
     "auto_resume",
-    "antenna_voltage_on_boot",
-    "f9p_update_rate",
     "default_lat",
     "default_lon",
     "default_zoom",
+    "gnss_port",
+    "gnss_baud",
+    "gnss_backend",
+    "rtcm_messages",
+    "rinex_enabled",
+    "rinex_rotate_hours",
+    "rinex_data_dir",
+    "local_caster_enabled",
+    "local_caster_port",
+    "local_caster_mountpoint",
 }
 
 
@@ -44,11 +52,19 @@ class ConfigUpdate(BaseModel):
     """Partial config update -- only include keys you want to change."""
     maptiler_key: str | None = None
     auto_resume: str | None = None
-    antenna_voltage_on_boot: str | None = None
-    f9p_update_rate: str | None = None
     default_lat: str | None = None
     default_lon: str | None = None
     default_zoom: str | None = None
+    gnss_port: str | None = None
+    gnss_baud: str | None = None
+    gnss_backend: str | None = None
+    rtcm_messages: str | None = None
+    rinex_enabled: str | None = None
+    rinex_rotate_hours: str | None = None
+    rinex_data_dir: str | None = None
+    local_caster_enabled: str | None = None
+    local_caster_port: str | None = None
+    local_caster_mountpoint: str | None = None
 
 
 @router.get("")

@@ -4,7 +4,7 @@ RTK GNSS base station system running on a Raspberry Pi 4. Two main components:
 
 ## Structure
 
-- `base-station/` — Pi hardware config: WiFi, modem IMEI, RTKBase install docs
+- `base-station/` — Pi hardware config: WiFi, modem IMEI, and device setup docs
 - `survey365/` — Field operations controller (FastAPI web app, map UI, native GNSS control)
 
 ## Pi Access
@@ -51,9 +51,8 @@ sudo bash survey365/install.sh --user=jaredirby
 
 ## Important Notes
 
-- Survey365 controls the F9P directly via serial (pyubx2). No RTKBase dependency.
+- Survey365 controls the F9P directly via serial (pyubx2).
 - F9P antenna voltage is enabled automatically by GNSSManager on startup.
-- GNSS config is stored in the Survey365 database (config table), not settings.conf.
+- GNSS config is stored in the Survey365 database (config table).
 - Tailscale Serve proxies port 80 via HTTPS. WebSocket does NOT work through Tailscale Serve (HTTP/2 ALPN issue). The frontend falls back to HTTP polling.
-- WiFi config is in `base-station/rtkbase.conf`. Run `sudo bash base-station/setup-wifi.sh` to apply.
-- RTKBase is still installed at `~/rtkbase` but all its services are disabled. Can be removed later.
+- WiFi config is in `base-station/station.conf`. Run `sudo bash base-station/setup-wifi.sh` to apply.

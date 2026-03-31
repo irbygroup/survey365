@@ -285,6 +285,71 @@
       <div class="s365-admin-section">
         <h2>Configuration</h2>
         <form @submit.prevent="saveConfig()" class="s365-admin-form">
+          <h3 style="margin:0 0 8px 0; color:#0f172a;">GNSS Receiver</h3>
+          <p style="margin:0 0 12px 0; color:#64748b; font-size:14px;">
+            Receiver connection and RTCM settings apply after restarting the Survey365 service.
+          </p>
+
+          <div style="display:grid; grid-template-columns:2fr 1fr 1fr; gap:12px;">
+            <div>
+              <label for="cfg-gnss-port">Serial Port</label>
+              <input type="text" id="cfg-gnss-port" x-model="config.gnss_port" placeholder="/dev/ttyGNSS">
+            </div>
+            <div>
+              <label for="cfg-gnss-baud">Baud</label>
+              <input type="number" id="cfg-gnss-baud" x-model="config.gnss_baud" min="4800" step="1">
+            </div>
+            <div>
+              <label for="cfg-gnss-backend">Backend</label>
+              <select id="cfg-gnss-backend" x-model="config.gnss_backend">
+                <option value="ublox">u-blox</option>
+                <option value="quectel">Quectel (stub)</option>
+              </select>
+            </div>
+          </div>
+
+          <label for="cfg-rtcm-messages">RTCM Messages</label>
+          <input type="text" id="cfg-rtcm-messages" x-model="config.rtcm_messages"
+                 placeholder="1005(10),1077,1087,1097,1127,1230(10)">
+
+          <h3 style="margin:20px 0 8px 0; color:#0f172a;">RTCM Outputs</h3>
+          <label style="display:flex; align-items:center; gap:8px; margin:12px 0;">
+            <input type="checkbox" x-model="config.rinex_enabled" style="width:auto; height:auto;">
+            Enable raw RTCM logging
+          </label>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <label for="cfg-rinex-rotate">RINEX Rotate Hours</label>
+              <input type="number" id="cfg-rinex-rotate" x-model="config.rinex_rotate_hours" min="1" step="1">
+            </div>
+            <div>
+              <label for="cfg-rinex-dir">RINEX Data Dir</label>
+              <input type="text" id="cfg-rinex-dir" x-model="config.rinex_data_dir" placeholder="data/rinex">
+            </div>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:8px; margin:12px 0;">
+            <input type="checkbox" x-model="config.local_caster_enabled" style="width:auto; height:auto;">
+            Enable local NTRIP caster
+          </label>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <label for="cfg-local-caster-port">Local Caster Port</label>
+              <input type="number" id="cfg-local-caster-port" x-model="config.local_caster_port" min="1" max="65535" step="1">
+            </div>
+            <div>
+              <label for="cfg-local-caster-mount">Local Caster Mountpoint</label>
+              <input type="text" id="cfg-local-caster-mount" x-model="config.local_caster_mountpoint" placeholder="SURVEY365">
+            </div>
+          </div>
+
+          <p style="margin:12px 0 0 0; color:#64748b; font-size:14px;">
+            Default outbound NTRIP caster profiles start automatically when base mode is active.
+          </p>
+
+          <h3 style="margin:20px 0 8px 0; color:#0f172a;">Map and Session</h3>
           <label for="cfg-maptiler">MapTiler API Key</label>
           <input type="text" id="cfg-maptiler" x-model="config.maptiler_key" placeholder="Your MapTiler key">
 
@@ -364,7 +429,23 @@
         ntripFormError: '',
 
         /* Config */
-        config: { maptiler_key: '', default_lat: 30.69, default_lon: -88.05, default_zoom: 12, auto_resume: false },
+        config: {
+          maptiler_key: '',
+          default_lat: 30.69,
+          default_lon: -88.05,
+          default_zoom: 12,
+          auto_resume: false,
+          gnss_port: '/dev/ttyGNSS',
+          gnss_baud: '115200',
+          gnss_backend: 'ublox',
+          rtcm_messages: '1005(10),1077,1087,1097,1127,1230(10)',
+          rinex_enabled: true,
+          rinex_rotate_hours: '24',
+          rinex_data_dir: 'data/rinex',
+          local_caster_enabled: false,
+          local_caster_port: '2101',
+          local_caster_mountpoint: 'SURVEY365'
+        },
         configSaved: false,
         configError: '',
 
@@ -647,6 +728,16 @@
               this.config.default_lon = data.default_lon || -88.05;
               this.config.default_zoom = data.default_zoom || 12;
               this.config.auto_resume = data.auto_resume === true || data.auto_resume === 'true';
+              this.config.gnss_port = data.gnss_port || '/dev/ttyGNSS';
+              this.config.gnss_baud = data.gnss_baud || '115200';
+              this.config.gnss_backend = data.gnss_backend || 'ublox';
+              this.config.rtcm_messages = data.rtcm_messages || '1005(10),1077,1087,1097,1127,1230(10)';
+              this.config.rinex_enabled = data.rinex_enabled === true || data.rinex_enabled === 'true';
+              this.config.rinex_rotate_hours = data.rinex_rotate_hours || '24';
+              this.config.rinex_data_dir = data.rinex_data_dir || 'data/rinex';
+              this.config.local_caster_enabled = data.local_caster_enabled === true || data.local_caster_enabled === 'true';
+              this.config.local_caster_port = data.local_caster_port || '2101';
+              this.config.local_caster_mountpoint = data.local_caster_mountpoint || 'SURVEY365';
             }
           } catch (_) {}
         },
@@ -664,7 +755,17 @@
                 default_lat: String(this.config.default_lat),
                 default_lon: String(this.config.default_lon),
                 default_zoom: String(this.config.default_zoom),
-                auto_resume: this.config.auto_resume ? 'true' : 'false'
+                auto_resume: this.config.auto_resume ? 'true' : 'false',
+                gnss_port: this.config.gnss_port,
+                gnss_baud: String(this.config.gnss_baud),
+                gnss_backend: this.config.gnss_backend,
+                rtcm_messages: this.config.rtcm_messages,
+                rinex_enabled: this.config.rinex_enabled ? 'true' : 'false',
+                rinex_rotate_hours: String(this.config.rinex_rotate_hours),
+                rinex_data_dir: this.config.rinex_data_dir,
+                local_caster_enabled: this.config.local_caster_enabled ? 'true' : 'false',
+                local_caster_port: String(this.config.local_caster_port),
+                local_caster_mountpoint: this.config.local_caster_mountpoint
               })
             });
 

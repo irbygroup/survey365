@@ -118,7 +118,7 @@ async def start_known_base(req: KnownBaseRequest):
 
         # Configure GNSS receiver and start RTCM outputs
         height = site["height"] if site["height"] is not None else 0.0
-        await start_base(gnss_manager, site["lat"], site["lon"], height, outputs=["rinex", "local_caster"])
+        await start_base(gnss_manager, site["lat"], site["lon"], height)
 
         # Create session record
         active_pid = await get_active_project_id()
@@ -321,7 +321,7 @@ async def _run_relative_base(duration: int):
         }
 
         # Configure GNSS receiver and start RTCM outputs
-        await start_base(gnss_manager, avg_lat, avg_lon, avg_height, outputs=["rinex", "local_caster"])
+        await start_base(gnss_manager, avg_lat, avg_lon, avg_height)
 
         # Create session record
         async with get_db() as db:

@@ -77,6 +77,15 @@ DEFAULT_RTCM_RATES = {
     CFG_MSGOUT_RTCM_1230_USB: 10,   # GLONASS biases, every 10s
 }
 
+RTCM_MESSAGE_KEYS = {
+    1005: CFG_MSGOUT_RTCM_1005_USB,
+    1077: CFG_MSGOUT_RTCM_1077_USB,
+    1087: CFG_MSGOUT_RTCM_1087_USB,
+    1097: CFG_MSGOUT_RTCM_1097_USB,
+    1127: CFG_MSGOUT_RTCM_1127_USB,
+    1230: CFG_MSGOUT_RTCM_1230_USB,
+}
+
 
 def _ubx_checksum(data: bytes) -> bytes:
     """Compute UBX Fletcher-8 checksum over class+id+length+payload."""
@@ -204,6 +213,43 @@ def parse_nav_sat(payload: bytes) -> list[dict]:
     return satellites
 
 
+def parse_rtcm_message_spec(message_spec: str | None) -> dict[int, int]:
+    """Parse config like '1005(10),1077,1087,1097,1127,1230(10)'."""
+    if not message_spec or not message_spec.strip():
+        return dict(DEFAULT_RTCM_RATES)
+
+    rates: dict[int, int] = {}
+    for raw_item in message_spec.split(","):
+        item = raw_item.strip()
+        if not item:
+            continue
+
+        rate = 1
+        if "(" in item and item.endswith(")"):
+            msg_part, rate_part = item[:-1].split("(", 1)
+            item = msg_part.strip()
+            try:
+                rate = max(0, int(rate_part.strip()))
+            except ValueError:
+                logger.warning("Ignoring invalid RTCM rate in %r", raw_item)
+                continue
+
+        try:
+            message_id = int(item)
+        except ValueError:
+            logger.warning("Ignoring invalid RTCM message id in %r", raw_item)
+            continue
+
+        key_id = RTCM_MESSAGE_KEYS.get(message_id)
+        if key_id is None:
+            logger.warning("Ignoring unsupported RTCM message id %s", message_id)
+            continue
+
+        rates[key_id] = rate
+
+    return rates or dict(DEFAULT_RTCM_RATES)
+
+
 class UBloxBackend:
     """u-blox ZED-F9P backend: parse UBX frames and send configuration commands."""
 
@@ -286,12 +332,13 @@ class UBloxBackend:
         logger.info("Configured rover mode (TMODE3 disabled)")
         await asyncio.sleep(0.3)
 
-    async def enable_rtcm_output(self, serial_reader):
+    async def enable_rtcm_output(self, serial_reader, message_spec: str | None = None):
         """Enable RTCM3 message output on USB port."""
-        kvs = [(key, rate, "U1") for key, rate in DEFAULT_RTCM_RATES.items()]
+        selected_rates = parse_rtcm_message_spec(message_spec)
+        kvs = [(key, rate, "U1") for key, rate in selected_rates.items()]
         msg = _build_valset(kvs)
         await serial_reader.write(msg)
-        logger.info("Enabled RTCM3 output on USB")
+        logger.info("Enabled RTCM3 output on USB: %s", selected_rates)
         await asyncio.sleep(0.3)
 
     async def disable_rtcm_output(self, serial_reader):
