@@ -13,6 +13,7 @@ Usage:
 """
 
 import logging
+import logging.handlers
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -34,12 +35,29 @@ from .routes import status as status_routes
 from .routes import system as system_routes
 from .ws import live as ws_live
 
-# Configure logging
+# Configure logging — stdout (journalctl) + rotating file
+_log_fmt = logging.Formatter(
+    "%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# Rotating file handler: data/logs/survey365.log (5MB x 3 backups)
+_log_dir = Path(__file__).parent.parent / "data" / "logs"
+_log_dir.mkdir(parents=True, exist_ok=True)
+_file_handler = logging.handlers.RotatingFileHandler(
+    _log_dir / "survey365.log",
+    maxBytes=5 * 1024 * 1024,
+    backupCount=3,
+)
+_file_handler.setFormatter(_log_fmt)
+logging.getLogger().addHandler(_file_handler)
+
 logger = logging.getLogger("survey365")
 
 

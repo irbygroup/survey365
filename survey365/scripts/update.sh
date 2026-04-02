@@ -125,16 +125,34 @@ else
     ok "No code changes -- skipping pip install"
 fi
 
-# ── Check if systemd/nginx files changed ───────────────────────────────
+# ── Auto-deploy systemd/nginx changes ─────────────────────────────────
+# Detect the running user for {user}/{home} placeholder substitution
+RUNNING_USER="$(whoami)"
+RUNNING_HOME="$(eval echo "~$RUNNING_USER")"
+
 if [[ "$PREV_COMMIT" != "$NEW_COMMIT" ]]; then
     if git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- survey365/systemd/ | grep -q .; then
-        warn "systemd service files changed -- re-run install.sh to deploy them:"
-        warn "  sudo bash $SURVEY365_DIR/install.sh"
+        info "systemd files changed -- deploying..."
+        for unit in survey365.service survey365-boot.service survey365-update.service survey365-update.timer; do
+            src="$SURVEY365_DIR/systemd/$unit"
+            if [[ -f "$src" ]]; then
+                sed -e "s|{user}|$RUNNING_USER|g" -e "s|{home}|$RUNNING_HOME|g" \
+                    "$src" | sudo tee "/etc/systemd/system/$unit" >/dev/null
+            fi
+        done
+        sudo systemctl daemon-reload
+        ok "systemd units deployed and daemon reloaded"
     fi
 
     if git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- survey365/nginx/ | grep -q .; then
-        warn "nginx config changed -- re-run install.sh to deploy it:"
-        warn "  sudo bash $SURVEY365_DIR/install.sh"
+        info "nginx config changed -- deploying..."
+        sudo cp "$SURVEY365_DIR/nginx/survey365.conf" /etc/nginx/sites-available/survey365
+        if sudo nginx -t 2>&1; then
+            sudo nginx -s reload
+            ok "nginx config deployed and reloaded"
+        else
+            warn "nginx config test failed -- kept previous config"
+        fi
     fi
 fi
 

@@ -1,3 +1,4 @@
+# Managed by survey365/install.sh — deployed to /etc/systemd/system/survey365-boot.service
 [Unit]
 Description=Survey365 Boot Tasks (hardware check)
 After=network.target

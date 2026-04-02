@@ -158,6 +158,12 @@ if [[ ! -d "$DATA_DIR" ]]; then
     ok "Data directory created at $DATA_DIR"
 fi
 
+LOG_DIR="$DATA_DIR/logs"
+if [[ ! -d "$LOG_DIR" ]]; then
+    sudo -u "$TARGET_USER" mkdir -p "$LOG_DIR"
+    ok "Log directory created at $LOG_DIR"
+fi
+
 if [[ ! -f "$DB_PATH" || ! -s "$DB_PATH" ]]; then
     sudo -u "$TARGET_USER" bash -c "
         cd '$SURVEY365_DIR' && \
@@ -279,6 +285,12 @@ $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-update.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+# Auto-deploy: update.sh writes systemd units and nginx config
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/survey365*
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/cp $SURVEY365_DIR/nginx/survey365.conf /etc/nginx/sites-available/survey365
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/sbin/nginx -s reload
 "
 
 echo "$SUDOERS_CONTENT" > "$SUDOERS_FILE"

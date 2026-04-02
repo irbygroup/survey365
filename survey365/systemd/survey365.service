@@ -1,7 +1,8 @@
+# Managed by survey365/install.sh — deployed to /etc/systemd/system/survey365.service
 [Unit]
 Description=Survey365 Field Controller
-After=network-online.target survey365-update.service
-Wants=network-online.target survey365-update.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
