@@ -43,8 +43,18 @@ REPO_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || (cd "$
 SURVEY365_DIR="$REPO_DIR"
 VENV_DIR="$SURVEY365_DIR/venv"
 ROOT_WAS_RO=false
+BOOT_WAS_RO=false
 SURVEY365_WAS_ACTIVE=false
 REBOOT_REQUESTED=false
+
+mount_has_option() {
+    local target="$1"
+    local option="$2"
+    local opts
+
+    opts=$(findmnt -no OPTIONS --target "$target" 2>/dev/null || true)
+    [[ "$opts" =~ (^|,)$option(,|$) ]]
+}
 
 cleanup() {
     local rc=$?
@@ -54,18 +64,20 @@ cleanup() {
         sudo systemctl start survey365 >/dev/null 2>&1 || true
     fi
 
-    if [[ "$ROOT_WAS_RO" == "true" && "$REBOOT_REQUESTED" != "true" ]]; then
+    if [[ ("$ROOT_WAS_RO" == "true" || "$BOOT_WAS_RO" == "true") && "$REBOOT_REQUESTED" != "true" ]]; then
         info "Restoring read-only root filesystem..."
         if [[ -x /usr/local/bin/survey365-maint-ro ]]; then
             sudo /usr/local/bin/survey365-maint-ro >/dev/null 2>&1 || true
-        elif [[ -x /usr/local/bin/survey365-root-ro ]]; then
+        elif [[ "$ROOT_WAS_RO" == "true" && -x /usr/local/bin/survey365-root-ro ]]; then
             sudo /usr/local/bin/survey365-root-ro >/dev/null 2>&1 || true
         else
             sudo sync >/dev/null 2>&1 || true
-            if mountpoint -q /boot/firmware; then
+            if [[ "$BOOT_WAS_RO" == "true" ]] && mountpoint -q /boot/firmware; then
                 sudo mount -o remount,ro /boot/firmware >/dev/null 2>&1 || true
             fi
-            sudo mount -o remount,ro / >/dev/null 2>&1 || true
+            if [[ "$ROOT_WAS_RO" == "true" ]]; then
+                sudo mount -o remount,ro / >/dev/null 2>&1 || true
+            fi
         fi
     fi
 
@@ -73,22 +85,45 @@ cleanup() {
 }
 trap cleanup EXIT
 
-ensure_root_writable() {
-    local opts
-    opts=$(findmnt -no OPTIONS / 2>/dev/null || true)
-    if [[ "$opts" =~ (^|,)ro(,|$) ]]; then
+ensure_update_mounts_writable() {
+    local need_root_rw=false
+    local need_boot_rw=false
+
+    if mount_has_option / ro; then
+        need_root_rw=true
         ROOT_WAS_RO=true
-        info "Remounting / read-write for update..."
+    fi
+
+    if mountpoint -q /boot/firmware && mount_has_option /boot/firmware ro; then
+        need_boot_rw=true
+        BOOT_WAS_RO=true
+    fi
+
+    if [[ "$need_root_rw" == "false" && "$need_boot_rw" == "false" ]]; then
+        return 0
+    fi
+
+    info "Remounting writable filesystems for update..."
+    if [[ "$need_root_rw" == "true" || "$need_boot_rw" == "true" ]]; then
         if [[ -x /usr/local/bin/survey365-maint-rw ]]; then
             sudo /usr/local/bin/survey365-maint-rw
-        elif [[ -x /usr/local/bin/survey365-root-rw ]]; then
+        elif [[ "$need_root_rw" == "true" && -x /usr/local/bin/survey365-root-rw ]]; then
             sudo /usr/local/bin/survey365-root-rw
         else
-            sudo mount -o remount,rw /
-            if mountpoint -q /boot/firmware; then
+            if [[ "$need_root_rw" == "true" ]]; then
+                sudo mount -o remount,rw /
+            fi
+            if [[ "$need_boot_rw" == "true" ]] && mountpoint -q /boot/firmware; then
                 sudo mount -o remount,rw /boot/firmware || true
             fi
         fi
+    fi
+
+    if [[ "$need_root_rw" == "true" ]] && mount_has_option / ro; then
+        die "Failed to remount / read-write for update"
+    fi
+    if [[ "$need_boot_rw" == "true" ]] && mountpoint -q /boot/firmware && mount_has_option /boot/firmware ro; then
+        die "Failed to remount /boot/firmware read-write for update"
     fi
 }
 
@@ -152,7 +187,7 @@ if sudo systemctl is-active --quiet survey365; then
     SURVEY365_WAS_ACTIVE=true
 fi
 
-ensure_root_writable
+ensure_update_mounts_writable
 
 if [[ "$SURVEY365_WAS_ACTIVE" == "true" ]]; then
     info "Stopping survey365 before updating..."

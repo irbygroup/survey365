@@ -49,6 +49,15 @@ unit_enabled() {
     fi
 }
 
+mount_has_option() {
+    local target="$1"
+    local option="$2"
+    local opts
+
+    opts=$(findmnt -no OPTIONS --target "$target" 2>/dev/null || true)
+    [[ "$opts" =~ (^|,)$option(,|$) ]]
+}
+
 mount_source() {
     findmnt -no SOURCE --target "$1" 2>/dev/null || true
 }
@@ -324,6 +333,17 @@ configure_cmdline_for_resilient_mode() {
     printf '%s\n' "$(echo "$cmdline" | xargs)" > "$cmdline_file"
 }
 
+ensure_boot_firmware_writable() {
+    if ! mountpoint -q /boot/firmware; then
+        return 0
+    fi
+
+    if mount_has_option /boot/firmware ro; then
+        info "Remounting /boot/firmware read-write for resilient-mode boot changes..."
+        mount -o remount,rw /boot/firmware || die "Unable to remount /boot/firmware read-write"
+    fi
+}
+
 configure_fstab_for_resilient_mode() {
     local fstab="/etc/fstab"
     local tmp block
@@ -430,6 +450,7 @@ EOF
     configure_runtime_links_for_resilient_mode
     systemd-tmpfiles --create "$tmpfiles_conf" 2>/dev/null || true
 
+    ensure_boot_firmware_writable
     configure_cmdline_for_resilient_mode
     configure_fstab_for_resilient_mode
 
