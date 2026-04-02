@@ -151,6 +151,7 @@ resolve_legacy_station_conf() {
     while read -r commit; do
         [[ -n "$commit" ]] || continue
         tmp=$(mktemp)
+        chmod 0644 "$tmp"
         if ! git -C "$REPO_DIR" show "$commit:base-station/station.conf" > "$tmp" 2>/dev/null; then
             rm -f "$tmp"
             continue
