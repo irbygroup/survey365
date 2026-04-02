@@ -32,6 +32,8 @@
   var _reconnectDelay = 2000;
   var _backendReachable = true;
   var _backendDownSince = null;
+  var _wsOpenTimer = null;
+  var _pollingAnnounced = false;
 
   /* -------------------------------------------------------------------
    * _dispatch -- send a status event to the DOM
@@ -141,7 +143,10 @@
   function _startPolling() {
     if (_pollTimer) return;
     _usePolling = true;
-    console.log('[S365] WebSocket unavailable, using HTTP polling');
+    if (!_pollingAnnounced) {
+      console.log('[S365] WebSocket unavailable, using HTTP polling');
+      _pollingAnnounced = true;
+    }
     _dispatchConnectionState(false);
 
     function pollOnce() {
@@ -165,6 +170,7 @@
       _pollTimer = null;
     }
     _usePolling = false;
+    _pollingAnnounced = false;
   }
 
   /* -------------------------------------------------------------------
@@ -177,6 +183,9 @@
     }
     clearTimeout(_reconnectTimer);
     clearInterval(_keepaliveTimer);
+    clearTimeout(_wsOpenTimer);
+    _reconnectTimer = null;
+    _wsOpenTimer = null;
 
     var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     var url = proto + '//' + location.host + '/ws/live';
@@ -189,15 +198,18 @@
     }
 
     /* If the WebSocket doesn't open within 3 seconds, consider it failed */
-    var openTimeout = setTimeout(function () {
-      if (_ws && _ws.readyState !== WebSocket.OPEN) {
-        try { _ws.close(); } catch (_) { /* ignore */ }
-        _onWsFail();
+    var wsRef = _ws;
+    _wsOpenTimer = setTimeout(function () {
+      if (wsRef && wsRef.readyState !== WebSocket.OPEN) {
+        try { wsRef.close(); } catch (_) { /* ignore */ }
       }
     }, 3000);
 
     _ws.onopen = function () {
-      clearTimeout(openTimeout);
+      clearTimeout(_wsOpenTimer);
+      _wsOpenTimer = null;
+      clearTimeout(_reconnectTimer);
+      _reconnectTimer = null;
       _connected = true;
       _wsFailCount = 0;
       _stopPolling();
@@ -221,10 +233,12 @@
     };
 
     _ws.onclose = function () {
-      clearTimeout(openTimeout);
+      clearTimeout(_wsOpenTimer);
+      _wsOpenTimer = null;
       var wasConnected = _connected;
       _connected = false;
       clearInterval(_keepaliveTimer);
+      _ws = null;
 
       if (!wasConnected) {
         /* Never opened successfully */
@@ -247,6 +261,7 @@
     if (_wsFailCount >= _maxWsRetries) {
       _startPolling();
     } else {
+      clearTimeout(_reconnectTimer);
       _reconnectTimer = setTimeout(_connectWs, _reconnectDelay);
     }
   }
@@ -263,6 +278,7 @@
 
   function disconnect() {
     clearTimeout(_reconnectTimer);
+    clearTimeout(_wsOpenTimer);
     clearInterval(_keepaliveTimer);
     _stopPolling();
     _stopHealthMonitor();

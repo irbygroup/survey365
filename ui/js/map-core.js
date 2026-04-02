@@ -78,6 +78,21 @@
   var _geolocateCtrl = null;
   var _userPosition = null;
 
+  function _supportsGeolocationControl() {
+    if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.geolocation) {
+      return false;
+    }
+
+    if (window.isSecureContext) {
+      return true;
+    }
+
+    var hostname = (window.location && window.location.hostname) || '';
+    return hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '[::1]';
+  }
+
   /* -------------------------------------------------------------------
    * _buildTileUrls -- replace {key} placeholder in tile URLs
    * ------------------------------------------------------------------- */
@@ -176,7 +191,7 @@
     _map.addControl(new maplibregl.ScaleControl({ maxWidth: 150, unit: 'imperial' }), 'bottom-left');
 
     /* Geolocate control -- phone GPS blue dot */
-    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+    if (_supportsGeolocationControl()) {
       _geolocateCtrl = new maplibregl.GeolocateControl({
         positionOptions: { enableHighAccuracy: true },
         trackUserLocation: true,
