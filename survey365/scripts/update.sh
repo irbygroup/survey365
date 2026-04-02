@@ -2,14 +2,16 @@
 # Survey365 Update Script
 # Check mode:  bash ~/rtk-surveying/survey365/scripts/update.sh --auto
 # Apply mode:  bash ~/rtk-surveying/survey365/scripts/update.sh
+# Full maintenance: bash ~/rtk-surveying/survey365/scripts/update.sh --os-upgrade
 #
 # What this does:
 #   1. Checks origin/main for updates without mutating the repository in --auto mode
-#   2. Applies updates only when run without --auto
-#   3. Temporarily remounts / read-write when required
-#   4. Reinstalls Python dependencies and redeploys changed systemd/nginx files
+#   2. Applies app updates only when run without --auto
+#   3. Optionally upgrades Debian packages and reboots when --os-upgrade is requested
+#   4. Re-runs install.sh so deployment logic stays single-sourced
 
 set -euo pipefail
+PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 
 # ── Color output ────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -25,9 +27,11 @@ err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die()   { err "$*"; exit 1; }
 
 AUTO_MODE=false
+OS_UPGRADE=false
 for arg in "$@"; do
     case "$arg" in
         --auto) AUTO_MODE=true ;;
+        --os-upgrade) OS_UPGRADE=true ;;
         *) die "Unknown argument: $arg" ;;
     esac
 done
@@ -39,6 +43,7 @@ REPO_DIR="$(cd "$SURVEY365_DIR/.." && pwd)"
 VENV_DIR="$SURVEY365_DIR/venv"
 ROOT_WAS_RO=false
 SURVEY365_WAS_ACTIVE=false
+REBOOT_REQUESTED=false
 
 cleanup() {
     local rc=$?
@@ -48,7 +53,7 @@ cleanup() {
         sudo systemctl start survey365 >/dev/null 2>&1 || true
     fi
 
-    if [[ "$ROOT_WAS_RO" == "true" ]]; then
+    if [[ "$ROOT_WAS_RO" == "true" && "$REBOOT_REQUESTED" != "true" ]]; then
         info "Restoring read-only root filesystem..."
         if [[ -x /usr/local/bin/survey365-root-ro ]]; then
             sudo /usr/local/bin/survey365-root-ro >/dev/null 2>&1 || true
@@ -109,7 +114,12 @@ PREV_COMMIT=$(git -C "$REPO_DIR" rev-parse HEAD)
 PREV_SHORT=$(git -C "$REPO_DIR" rev-parse --short HEAD)
 info "Current commit: $PREV_SHORT"
 
+APP_UPDATE_NEEDED=true
 if [[ "$PREV_COMMIT" == "$REMOTE_COMMIT" ]]; then
+    APP_UPDATE_NEEDED=false
+fi
+
+if [[ "$APP_UPDATE_NEEDED" == "false" && "$OS_UPGRADE" == "false" ]]; then
     ok "Already up to date ($PREV_SHORT)"
     exit 0
 fi
@@ -138,21 +148,27 @@ if [[ "$SURVEY365_WAS_ACTIVE" == "true" ]]; then
     sudo systemctl stop survey365
 fi
 
-info "Fetching latest code from origin/main..."
-git -C "$REPO_DIR" fetch origin main
-git -C "$REPO_DIR" merge --ff-only FETCH_HEAD
+NEW_COMMIT="$PREV_COMMIT"
+NEW_SHORT="$PREV_SHORT"
+if [[ "$APP_UPDATE_NEEDED" == "true" ]]; then
+    info "Fetching latest code from origin/main..."
+    git -C "$REPO_DIR" fetch origin main
+    git -C "$REPO_DIR" merge --ff-only FETCH_HEAD
 
-NEW_COMMIT=$(git -C "$REPO_DIR" rev-parse HEAD)
-NEW_SHORT=$(git -C "$REPO_DIR" rev-parse --short HEAD)
+    NEW_COMMIT=$(git -C "$REPO_DIR" rev-parse HEAD)
+    NEW_SHORT=$(git -C "$REPO_DIR" rev-parse --short HEAD)
 
-info "Updated: $PREV_SHORT -> $NEW_SHORT"
-echo ""
-info "Changes:"
-git -C "$REPO_DIR" log --oneline "${PREV_COMMIT}..${NEW_COMMIT}"
-echo ""
+    info "Updated: $PREV_SHORT -> $NEW_SHORT"
+    echo ""
+    info "Changes:"
+    git -C "$REPO_DIR" log --oneline "${PREV_COMMIT}..${NEW_COMMIT}"
+    echo ""
+else
+    info "Application already at $PREV_SHORT -- continuing with maintenance tasks."
+fi
 
 REQUIREMENTS_FILE="$SURVEY365_DIR/requirements.txt"
-if git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- survey365/requirements.txt | grep -q .; then
+if [[ "$APP_UPDATE_NEEDED" == "true" ]] && git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- survey365/requirements.txt | grep -q .; then
     info "requirements.txt changed -- reinstalling Python packages..."
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip
     "$VENV_DIR/bin/pip" install --quiet -r "$REQUIREMENTS_FILE"
@@ -163,47 +179,29 @@ fi
 
 RUNNING_USER="$(whoami)"
 RUNNING_HOME="$(eval echo "~$RUNNING_USER")"
-
-if git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- survey365/systemd/ | grep -q .; then
-    info "systemd files changed -- deploying..."
-    for unit in \
-        survey365.service \
-        survey365-boot.service \
-        survey365-update.service \
-        survey365-update-check.service \
-        survey365-update-check.timer
-    do
-        src="$SURVEY365_DIR/systemd/$unit"
-        if [[ -f "$src" ]]; then
-            data_dir=$(systemctl show -p Environment survey365.service 2>/dev/null | sed -n 's/.*SURVEY365_DB=\(.*\)\/survey365\.db.*/\1/p')
-            if [[ -z "$data_dir" ]]; then
-                data_dir="$SURVEY365_DIR/data"
-            fi
-            sed \
-                -e "s|{user}|$RUNNING_USER|g" \
-                -e "s|{home}|$RUNNING_HOME|g" \
-                -e "s|{data_dir}|$data_dir|g" \
-                "$src" | sudo tee "/etc/systemd/system/$unit" >/dev/null
-        fi
-    done
-    sudo rm -f /etc/systemd/system/survey365-update.timer
-    sudo systemctl daemon-reload
-    ok "systemd units deployed and daemon reloaded"
+DATA_DB_PATH=$(systemctl show -p Environment survey365.service 2>/dev/null | sed -n 's/.*SURVEY365_DB=\([^ ]*\).*/\1/p')
+if [[ -z "$DATA_DB_PATH" ]]; then
+    DATA_ROOT="$SURVEY365_DIR/data"
+else
+    DATA_ROOT="$(dirname "$DATA_DB_PATH")"
+fi
+INSTALL_ARGS=(--user="$RUNNING_USER" --data-root="$DATA_ROOT")
+if grep -q '^# BEGIN survey365-resilient$' /etc/fstab 2>/dev/null; then
+    INSTALL_ARGS+=(--resilient)
 fi
 
-if git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- survey365/nginx/ | grep -q .; then
-    info "nginx config changed -- deploying..."
-    sudo cp "$SURVEY365_DIR/nginx/survey365.conf" /etc/nginx/sites-available/survey365
-    if sudo nginx -t 2>&1; then
-        sudo nginx -s reload
-        ok "nginx config deployed and reloaded"
-    else
-        warn "nginx config test failed -- kept previous config"
-    fi
+if [[ "$OS_UPGRADE" == "true" ]]; then
+    info "Updating Debian packages..."
+    sudo apt-get update
+    sudo apt-get -y \
+        -o Dpkg::Options::=--force-confdef \
+        -o Dpkg::Options::=--force-confold \
+        full-upgrade
+    ok "Debian packages upgraded"
 fi
 
-info "Starting survey365 service..."
-sudo systemctl start survey365
+info "Re-running install.sh to deploy the updated system state..."
+sudo "$SURVEY365_DIR/install.sh" "${INSTALL_ARGS[@]}"
 
 sleep 2
 
@@ -227,3 +225,9 @@ echo -e "  ${BLUE}Date:${NC}    $(git -C "$REPO_DIR" log -1 --format='%ci' HEAD)
 echo -e "  ${BLUE}Message:${NC} $(git -C "$REPO_DIR" log -1 --format='%s' HEAD)"
 echo -e "  ${BLUE}Status:${NC}  $(sudo systemctl is-active survey365)"
 echo ""
+
+if [[ "$OS_UPGRADE" == "true" ]]; then
+    warn "Rebooting to complete OS package updates..."
+    REBOOT_REQUESTED=true
+    sudo systemctl reboot
+fi
