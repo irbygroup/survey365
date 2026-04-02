@@ -77,6 +77,7 @@
   var _accuracySource = null;
   var _geolocateCtrl = null;
   var _userPosition = null;
+  var _initialLocateResolved = false;
 
   function _supportsGeolocationControl() {
     if (typeof window === 'undefined' || typeof navigator === 'undefined' || !navigator.geolocation) {
@@ -137,6 +138,51 @@
 
     button.setAttribute('title', label);
     button.setAttribute('aria-label', label);
+  }
+
+  function _dispatchUserPositionUnavailable(detail) {
+    document.dispatchEvent(new CustomEvent('s365:user-position-unavailable', {
+      detail: detail || {}
+    }));
+  }
+
+  function _attemptInitialUserCenter() {
+    if (_initialLocateResolved) return;
+
+    if (!_supportsGeolocationControl()) {
+      _initialLocateResolved = true;
+      _dispatchUserPositionUnavailable({ reason: 'unsupported' });
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(function (position) {
+      if (!_map) return;
+
+      _initialLocateResolved = true;
+      _userPosition = {
+        lat: position.coords.latitude,
+        lon: position.coords.longitude,
+        accuracy: position.coords.accuracy
+      };
+
+      document.dispatchEvent(new CustomEvent('s365:user-position', { detail: _userPosition }));
+      _map.flyTo({
+        center: [_userPosition.lon, _userPosition.lat],
+        zoom: Math.max(_map.getZoom(), 15),
+        duration: 800
+      });
+    }, function (err) {
+      _initialLocateResolved = true;
+      _dispatchUserPositionUnavailable({
+        reason: 'unavailable',
+        code: err && err.code,
+        message: err && err.message
+      });
+    }, {
+      enableHighAccuracy: true,
+      timeout: 8000,
+      maximumAge: 60000
+    });
   }
 
   /* -------------------------------------------------------------------
@@ -217,6 +263,7 @@
       _addSiteSource();
       _addBaseMarkerSource();
       _addAccuracySource();
+      _attemptInitialUserCenter();
       document.dispatchEvent(new Event('s365:map-ready'));
     });
 

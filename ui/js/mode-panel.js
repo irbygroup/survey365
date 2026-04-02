@@ -25,6 +25,8 @@ function survey365App() {
     defaultLat: 30.69,
     defaultLon: -88.05,
     defaultZoom: 12,
+    initialCenterResolved: false,
+    initialCenterApplied: false,
 
     /* ---------------------------------------------------------------
      * Project State
@@ -257,6 +259,15 @@ function survey365App() {
         if (self.activeProject) {
           self._loadSites();
         }
+        self._centerOnBaseIfNeeded();
+      });
+      document.addEventListener('s365:user-position', function () {
+        self.initialCenterResolved = true;
+        self.initialCenterApplied = true;
+      });
+      document.addEventListener('s365:user-position-unavailable', function () {
+        self.initialCenterResolved = true;
+        self._centerOnBaseIfNeeded();
       });
       document.addEventListener('s365:start-base-at-site', function (e) {
         var detail = e.detail;
@@ -491,6 +502,7 @@ function survey365App() {
           if (data.session) {
             this.sessionId = data.session.id;
           }
+          this._centerOnBaseIfNeeded();
         }
       } catch (err) {
         console.warn('[survey365App] Initial status fetch failed:', err);
@@ -535,6 +547,8 @@ function survey365App() {
         S365MapCore.updateBaseMarker(msg.gnss.latitude, msg.gnss.longitude, displayMode);
         S365MapCore.updateAccuracyCircle(msg.gnss.latitude, msg.gnss.longitude, msg.gnss.accuracy_h);
       }
+
+      this._centerOnBaseIfNeeded();
     },
 
     _onBackendState(detail) {
@@ -654,6 +668,21 @@ function survey365App() {
         label += ' - ' + this.modeSite.name;
       }
       return label;
+    },
+
+    _centerOnBaseIfNeeded() {
+      if (this.initialCenterApplied || !this.initialCenterResolved || !this.mapReady || !window.S365MapCore) {
+        return;
+      }
+
+      var lat = Number(this.gnss.latitude);
+      var lon = Number(this.gnss.longitude);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) {
+        return;
+      }
+
+      S365MapCore.centerOnBase(lat, lon);
+      this.initialCenterApplied = true;
     },
 
     /* ---------------------------------------------------------------

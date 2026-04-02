@@ -1863,12 +1863,34 @@ html, body {
 
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
   margin: 0 !important;
+  display: flex;
+  align-items: center;
 }
 
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group {
   display: flex;
   flex-direction: row;
+  gap: 8px;
   margin: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  overflow: visible;
+}
+
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button {
+  width: var(--s365-touch-min) !important;
+  height: var(--s365-touch-min) !important;
+  border: none !important;
+  border-radius: var(--s365-panel-radius) !important;
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  box-shadow: var(--s365-panel-shadow) !important;
+  transition: background 0.15s;
+}
+
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover,
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:active {
+  background-color: rgba(255, 255, 255, 1) !important;
 }
 
 /* GeolocateControl blue dot */
@@ -1924,7 +1946,7 @@ html, body {
   }
 
   .maplibregl-ctrl-bottom-right {
-    right: 144px;
+    right: 168px;
     bottom: 16px;
   }
 
