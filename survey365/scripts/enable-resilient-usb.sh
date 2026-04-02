@@ -83,7 +83,7 @@ PARTITION="$(lsblk -ln -o PATH,TYPE "$DEVICE" | awk '$2 == "part" { print $1; ex
 [[ -n "$PARTITION" ]] || die "Failed to discover new partition on $DEVICE"
 
 info "Formatting $PARTITION as ext4..."
-mkfs.ext4 -F -L survey365-data "$PARTITION" >/dev/null
+mkfs.ext4 -F -E nodiscard -L survey365-data "$PARTITION" >/dev/null
 
 mkdir -p "$DATA_ROOT"
 if mountpoint -q "$DATA_ROOT"; then
