@@ -684,8 +684,9 @@ html, body {
   z-index: 15;
   display: flex;
   flex-direction: row;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
+  height: var(--s365-touch-min);
 }
 
 .s365-basemap-picker {
@@ -1870,6 +1871,7 @@ html, body {
   gap: 10px;
   right: 168px;
   bottom: 24px;
+  height: var(--s365-touch-min);
 }
 
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl {
@@ -1887,16 +1889,23 @@ html, body {
   box-shadow: var(--s365-panel-shadow) !important;
   border-radius: var(--s365-panel-radius) !important;
   overflow: hidden;
+  height: var(--s365-touch-min);
 }
 
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button {
   width: var(--s365-touch-min) !important;
   height: var(--s365-touch-min) !important;
+  min-height: var(--s365-touch-min) !important;
   border: none !important;
   border-radius: 0 !important;
   background-color: transparent !important;
   box-shadow: none !important;
   transition: background 0.15s;
+  padding: 0 !important;
+  margin: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button + button {
