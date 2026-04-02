@@ -87,6 +87,15 @@ fi
 info "Repository: $REPO_DIR"
 info "Survey365:  $SURVEY365_DIR"
 
+REMOTE_COMMIT="$(git -C "$REPO_DIR" ls-remote --exit-code --heads origin main 2>/dev/null | awk 'NR==1 {print $1}')"
+if [[ -z "$REMOTE_COMMIT" ]]; then
+    if [[ "$AUTO_MODE" == "true" ]]; then
+        warn "Update check skipped: origin/main is not reachable"
+        exit 0
+    fi
+    die "origin/main is not reachable"
+fi
+
 CURRENT_BRANCH=$(git -C "$REPO_DIR" rev-parse --abbrev-ref HEAD)
 if [[ "$CURRENT_BRANCH" != "main" ]]; then
     if [[ "$AUTO_MODE" == "true" ]]; then
@@ -100,25 +109,6 @@ PREV_COMMIT=$(git -C "$REPO_DIR" rev-parse HEAD)
 PREV_SHORT=$(git -C "$REPO_DIR" rev-parse --short HEAD)
 info "Current commit: $PREV_SHORT"
 
-DIRTY_STATUS="$(git -C "$REPO_DIR" status --porcelain --untracked-files=no)"
-if [[ -n "$DIRTY_STATUS" ]]; then
-    warn "Tracked files are dirty; refusing to update:"
-    printf '%s\n' "$DIRTY_STATUS"
-    if [[ "$AUTO_MODE" == "true" ]]; then
-        exit 0
-    fi
-    die "Clean the repository before updating"
-fi
-
-REMOTE_COMMIT="$(git -C "$REPO_DIR" ls-remote --exit-code --heads origin main 2>/dev/null | awk 'NR==1 {print $1}')"
-if [[ -z "$REMOTE_COMMIT" ]]; then
-    if [[ "$AUTO_MODE" == "true" ]]; then
-        warn "Update check skipped: origin/main is not reachable"
-        exit 0
-    fi
-    die "origin/main is not reachable"
-fi
-
 if [[ "$PREV_COMMIT" == "$REMOTE_COMMIT" ]]; then
     ok "Already up to date ($PREV_SHORT)"
     exit 0
@@ -127,6 +117,13 @@ fi
 if [[ "$AUTO_MODE" == "true" ]]; then
     ok "Update available: $PREV_SHORT -> ${REMOTE_COMMIT:0:7}"
     exit 0
+fi
+
+DIRTY_STATUS="$(git -C "$REPO_DIR" status --porcelain --untracked-files=no)"
+if [[ -n "$DIRTY_STATUS" ]]; then
+    warn "Tracked files are dirty; refusing to update:"
+    printf '%s\n' "$DIRTY_STATUS"
+    die "Clean the repository before updating"
 fi
 
 SURVEY365_WAS_ACTIVE=false

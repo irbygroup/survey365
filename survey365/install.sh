@@ -50,6 +50,10 @@ mount_source() {
     findmnt -no SOURCE --target "$1" 2>/dev/null || true
 }
 
+mount_fstype() {
+    findmnt -no FSTYPE --target "$1" 2>/dev/null || true
+}
+
 replace_managed_block() {
     local file="$1"
     local begin_marker="$2"
@@ -138,7 +142,7 @@ migrate_dir_contents() {
 }
 
 preflight_resilient_mode() {
-    local root_source data_source
+    local root_source data_source data_uuid data_label
 
     [[ "$DATA_ROOT" = /* ]] || die "--data-root must be an absolute path"
 
@@ -148,6 +152,33 @@ preflight_resilient_mode() {
 
     if [[ -z "$data_source" || "$data_source" == "$root_source" ]]; then
         die "Resilient mode requires $DATA_ROOT to be a separate mounted filesystem (for example USB SSD or offline-created data partition)"
+    fi
+
+    DATA_FSTYPE=$(mount_fstype "$DATA_ROOT")
+    if [[ -z "$DATA_FSTYPE" ]]; then
+        die "Unable to determine filesystem type for $DATA_ROOT"
+    fi
+
+    if [[ -z "${DATA_DEVICE:-}" ]]; then
+        if [[ "$data_source" == /dev/* ]]; then
+            data_uuid=$(blkid -s UUID -o value "$data_source" 2>/dev/null || true)
+            data_label=$(blkid -s LABEL -o value "$data_source" 2>/dev/null || true)
+            if [[ -n "$data_uuid" ]]; then
+                DATA_DEVICE="UUID=$data_uuid"
+            elif [[ -n "$data_label" ]]; then
+                DATA_DEVICE="LABEL=$data_label"
+            else
+                die "Unable to derive a persistent mount identifier for $data_source. Re-run with --data-device=UUID=... or LABEL=..."
+            fi
+        else
+            die "Unable to derive a persistent mount identifier from '$data_source'. Re-run with --data-device=UUID=... or LABEL=..."
+        fi
+    fi
+
+    if [[ "$DATA_FSTYPE" == "ext4" ]]; then
+        DATA_MOUNT_OPTS="defaults,noatime,commit=5"
+    else
+        DATA_MOUNT_OPTS="defaults,noatime"
     fi
 }
 
@@ -171,7 +202,7 @@ configure_cmdline_for_resilient_mode() {
 
 configure_fstab_for_resilient_mode() {
     local fstab="/etc/fstab"
-    local tmp updated block
+    local tmp block
 
     tmp=$(mktemp)
     awk '
@@ -205,14 +236,42 @@ configure_fstab_for_resilient_mode() {
     block=$(mktemp)
     cat > "$block" <<EOF
 # BEGIN survey365-resilient
+$DATA_DEVICE	$DATA_ROOT	$DATA_FSTYPE	$DATA_MOUNT_OPTS	0	2
 tmpfs	/tmp	tmpfs	defaults,noatime,nosuid,nodev,size=64m	0	0
 tmpfs	/var/tmp	tmpfs	defaults,noatime,nosuid,nodev,size=32m	0	0
 tmpfs	/var/log	tmpfs	defaults,noatime,nosuid,nodev,size=48m	0	0
+tmpfs	/var/lib/sudo	tmpfs	defaults,noatime,nosuid,nodev,size=1m,mode=0700	0	0
 tmpfs	/var/lib/chrony	tmpfs	defaults,noatime,nosuid,nodev,size=1m	0	0
 $TAILSCALE_DATA_DIR	/var/lib/tailscale	none	bind	0	0
 # END survey365-resilient
 EOF
     replace_managed_block "$fstab" "# BEGIN survey365-resilient" "# END survey365-resilient" "$block"
+}
+
+configure_runtime_links_for_resilient_mode() {
+    local systemd_dir="/var/lib/systemd"
+    local random_seed_target="$SYSTEMD_DATA_DIR/random-seed"
+
+    mkdir -p "$SYSTEMD_DATA_DIR"
+
+    if [[ -f /var/lib/systemd/random-seed && ! -e "$random_seed_target" ]]; then
+        cp -a /var/lib/systemd/random-seed "$random_seed_target"
+    elif [[ ! -e "$random_seed_target" ]]; then
+        dd if=/dev/urandom of="$random_seed_target" bs=32 count=1 status=none
+    fi
+    chmod 600 "$random_seed_target"
+
+    mkdir -p "$systemd_dir"
+    rm -f /var/lib/systemd/random-seed
+    ln -s "$random_seed_target" /var/lib/systemd/random-seed
+
+    if [[ ! -L /etc/resolv.conf || "$(readlink -f /etc/resolv.conf 2>/dev/null || true)" != "/run/NetworkManager/resolv.conf" ]]; then
+        if [[ -e /etc/resolv.conf && ! -L /etc/resolv.conf ]]; then
+            cp -a /etc/resolv.conf /etc/resolv.conf.survey365-backup
+            rm -f /etc/resolv.conf
+        fi
+        ln -sfn /run/NetworkManager/resolv.conf /etc/resolv.conf
+    fi
 }
 
 configure_resilient_os_settings() {
@@ -231,6 +290,7 @@ EOF
 
     mkdir -p /var/lib/tailscale /var/lib/chrony
     migrate_dir_contents /var/lib/tailscale "$TAILSCALE_DATA_DIR"
+    configure_runtime_links_for_resilient_mode
 
     configure_cmdline_for_resilient_mode
     configure_fstab_for_resilient_mode
@@ -249,11 +309,13 @@ fi
 TARGET_USER=""
 RESILIENT_MODE=false
 DATA_ROOT=""
+DATA_DEVICE=""
 
 for arg in "$@"; do
     case "$arg" in
         --user=*) TARGET_USER="${arg#--user=}" ;;
         --data-root=*) DATA_ROOT="${arg#--data-root=}" ;;
+        --data-device=*) DATA_DEVICE="${arg#--data-device=}" ;;
         --resilient) RESILIENT_MODE=true ;;
         *) die "Unknown argument: $arg" ;;
     esac
@@ -305,11 +367,17 @@ DB_PATH="$DATA_ROOT/survey365.db"
 LOG_DIR="$DATA_ROOT/logs"
 RINEX_DIR="$DATA_ROOT/rinex"
 TAILSCALE_DATA_DIR="$DATA_ROOT/tailscale"
+SYSTEMD_DATA_DIR="$DATA_ROOT/systemd"
 REBOOT_REQUIRED=false
+DATA_FSTYPE=""
+DATA_MOUNT_OPTS=""
 
 info "Data root: $DATA_ROOT"
 if [[ "$RESILIENT_MODE" == "true" ]]; then
     info "Mode: resilient"
+    if [[ -n "$DATA_DEVICE" ]]; then
+        info "Data device: $DATA_DEVICE"
+    fi
 else
     info "Mode: standard"
 fi
