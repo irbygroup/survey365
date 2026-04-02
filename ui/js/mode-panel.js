@@ -180,6 +180,7 @@ function survey365App() {
      * Toast
      * --------------------------------------------------------------- */
     toasts: [],
+    _toastSeq: 0,
 
     /* ---------------------------------------------------------------
      * Computed: status indicator CSS class
@@ -1033,7 +1034,8 @@ function survey365App() {
      * --------------------------------------------------------------- */
     showToast(message, type) {
       type = type || 'info';
-      var toast = { id: Date.now(), message: message, type: type };
+      this._toastSeq += 1;
+      var toast = { id: 'toast-' + this._toastSeq, message: message, type: type };
       this.toasts.push(toast);
 
       var self = this;
