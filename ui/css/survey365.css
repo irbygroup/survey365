@@ -544,6 +544,105 @@ html, body {
   transform: rotate(180deg);
 }
 
+.s365-status-help-btn {
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--s365-text-light);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.s365-status-help-btn:hover,
+.s365-status-help-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.s365-status-legend {
+  position: fixed;
+  bottom: 90px;
+  left: 12px;
+  z-index: 16;
+  background: var(--s365-panel-bg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--s365-text-light);
+  border-radius: var(--s365-panel-radius);
+  padding: 16px;
+  box-shadow: var(--s365-panel-shadow);
+  width: calc(100vw - 24px);
+  max-width: 420px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.s365-status-legend-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.s365-status-legend-sub {
+  color: var(--s365-text-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.s365-status-legend-close {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--s365-text-muted);
+  font-size: 22px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.s365-status-legend-section {
+  margin-bottom: 14px;
+}
+
+.s365-status-legend-section:last-child {
+  margin-bottom: 0;
+}
+
+.s365-status-legend-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--s365-text-muted);
+  margin-bottom: 8px;
+}
+
+.s365-status-legend-section p {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.s365-status-legend-section p:last-child {
+  margin-bottom: 0;
+}
+
 /* --- Status Detail Panel --- */
 .s365-status-detail {
   position: fixed;
@@ -1846,6 +1945,16 @@ html, body {
 
   .s365-admin-select-compact {
     width: 100%;
+  }
+
+  .s365-status-legend {
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: min(72vh, 560px);
+    border-radius: 18px 18px 14px 14px;
   }
 }
 

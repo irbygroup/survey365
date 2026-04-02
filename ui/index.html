@@ -171,7 +171,7 @@
   <!-- ============================================================
        Bottom-left Status Strip (clickable to expand)
        ============================================================ -->
-  <div class="s365-status-strip" @click="showStatusDetail = !showStatusDetail" style="cursor:pointer">
+  <div class="s365-status-strip" @click="showStatusDetail = !showStatusDetail; showStatusLegend = false" style="cursor:pointer">
     <div class="s365-mode-indicator" :class="statusIndicatorColor">
       <span class="s365-mode-dot"></span>
       <div class="s365-mode-text">
@@ -180,6 +180,13 @@
       </div>
       <span class="s365-ws-indicator" :class="wsConnected ? 'connected' : 'disconnected'"
             :title="wsConnected ? 'Live connected' : 'Disconnected'"></span>
+      <button type="button"
+              class="s365-status-help-btn"
+              @click.stop="showStatusLegend = !showStatusLegend; if (showStatusLegend) showStatusDetail = false"
+              aria-label="Show status legend"
+              title="Status legend">
+        ?
+      </button>
     </div>
     <div class="s365-stats">
       <span>SVs: <strong x-text="gnss.satellites_used"></strong></span>
@@ -188,6 +195,48 @@
         Acc: <strong x-text="gnss.accuracy_h < 1 ? (gnss.accuracy_h * 1000).toFixed(0) + 'mm' : gnss.accuracy_h.toFixed(3) + 'm'"></strong>
       </span>
       <span class="s365-expand-arrow" :class="showStatusDetail ? 'open' : ''">&#9650;</span>
+    </div>
+  </div>
+
+  <div class="s365-status-legend" x-show="showStatusLegend" x-transition
+       @click.outside="showStatusLegend = false">
+    <div class="s365-status-legend-head">
+      <div>
+        <div class="s365-detail-title">Status Legend</div>
+        <div class="s365-status-legend-sub">Quick reference for the live GNSS strip.</div>
+      </div>
+      <button type="button"
+              class="s365-status-legend-close"
+              @click="showStatusLegend = false"
+              aria-label="Close status legend">
+        &times;
+      </button>
+    </div>
+
+    <div class="s365-status-legend-section">
+      <div class="s365-status-legend-label">Mode</div>
+      <p><strong>IDLE</strong>: no active base session.</p>
+      <p><strong>Broadcasting</strong>: known-point base is live.</p>
+      <p><strong>Relative Base</strong>: quick relative-base workflow is active.</p>
+      <p><strong>Establishing...</strong>: Survey365 is still building a base position.</p>
+    </div>
+
+    <div class="s365-status-legend-section">
+      <div class="s365-status-legend-label">Quality</div>
+      <p><strong>No receiver</strong>: controller is not talking to the GNSS serial device.</p>
+      <p><strong>No Fix</strong>: receiver is connected but has no usable position yet.</p>
+      <p><strong>Autonomous</strong>: standalone GNSS, no differential corrections.</p>
+      <p><strong>DGPS</strong>: differential solution, but not RTK float/fixed.</p>
+      <p><strong>RTK Float</strong>: carrier solution is converging.</p>
+      <p><strong>RTK Fixed</strong>: highest RTK-quality solution shown here.</p>
+    </div>
+
+    <div class="s365-status-legend-section">
+      <div class="s365-status-legend-label">Metrics</div>
+      <p><strong>SVs</strong>: satellites used in the current solution.</p>
+      <p><strong>Fix</strong>: receiver fix type, usually <strong>No Fix</strong>, <strong>2D</strong>, or <strong>3D</strong>.</p>
+      <p><strong>Acc</strong>: horizontal accuracy estimate, shown in mm under 1 meter and m above 1 meter.</p>
+      <p><strong>▲</strong>: opens the full status detail panel.</p>
     </div>
   </div>
 

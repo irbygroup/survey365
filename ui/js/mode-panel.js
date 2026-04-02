@@ -139,6 +139,7 @@ function survey365App() {
      * Status Detail Panel
      * --------------------------------------------------------------- */
     showStatusDetail: false,
+    showStatusLegend: false,
     satellites: [],
     _satPollTimer: null,
 
