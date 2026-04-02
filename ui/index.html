@@ -93,17 +93,9 @@
     <button class="s365-project-tag"
             x-show="activeProject && !showProjectGate"
             @click="openProjectSwitcher()"
+            title="Switch project"
             x-text="activeProject ? activeProject.name : ''">
     </button>
-
-    <!-- Search input -->
-    <div class="s365-search-wrap">
-      <input type="text"
-             placeholder="Search points..."
-             aria-label="Search saved points"
-             @keydown.enter="openModePanel()"
-             @focus="openModePanel()">
-    </div>
 
     <!-- Top-right controls -->
     <div class="s365-top-right">
@@ -153,10 +145,6 @@
         <button @click="startRelativeBase(); menuOpen = false">Relative Base (Quick)</button>
         <button @click="resumeMode(); menuOpen = false">Resume Last</button>
         <button class="danger" @click="stopMode(); menuOpen = false" x-show="mode !== 'idle'">Stop Broadcasting</button>
-
-        <hr>
-        <h4>Map</h4>
-        <button @click="centerOnBase(); menuOpen = false">Center on Base</button>
 
         <hr>
         <h4>Account</h4>
@@ -288,6 +276,19 @@
        Bottom-right Controls: Basemap Picker + Center on Base
        ============================================================ -->
   <div class="s365-bottom-right">
+    <!-- Saved Points -->
+    <button class="s365-icon-btn"
+            @click="openModePanel()"
+            aria-label="Open saved points"
+            title="Saved points">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 3h10"></path>
+        <path d="M7 21h10"></path>
+        <path d="M8 3c0 4 3 4 4 6 1 2 4 2 4 6"></path>
+        <path d="M16 3c0 4-3 4-4 6-1 2-4 2-4 6"></path>
+      </svg>
+    </button>
+
     <!-- Center on Base -->
     <button class="s365-icon-btn"
             @click="centerOnBase()"
@@ -310,15 +311,15 @@
            x-transition
            @click.outside="basemapMenuOpen = false">
         <label>
-          <input type="radio" name="basemap" value="street" x-model="basemap" @change="switchBasemap()">
+          <input type="radio" name="basemap" value="street" x-model="basemap" @change="switchBasemap()" title="Street basemap">
           Street
         </label>
         <label>
-          <input type="radio" name="basemap" value="satellite" x-model="basemap" @change="switchBasemap()">
+          <input type="radio" name="basemap" value="satellite" x-model="basemap" @change="switchBasemap()" title="Satellite basemap">
           Satellite
         </label>
         <label>
-          <input type="radio" name="basemap" value="topo" x-model="basemap" @change="switchBasemap()">
+          <input type="radio" name="basemap" value="topo" x-model="basemap" @change="switchBasemap()" title="Topographic basemap">
           Topo
         </label>
       </div>
@@ -344,6 +345,12 @@
           <div>
             <h3>Select Base Point</h3>
 
+            <input type="text"
+                   class="s365-sheet-search"
+                   x-model="siteSearch"
+                   placeholder="Search saved points..."
+                   aria-label="Search saved points">
+
             <!-- Loading state -->
             <div x-show="sitesLoading" class="s365-empty">
               <p aria-busy="true">Loading saved points...</p>
@@ -356,8 +363,12 @@
             </div>
 
             <!-- Site list -->
-            <div x-show="!sitesLoading && sites.length > 0">
-              <template x-for="(site, idx) in sites" :key="site.id">
+            <div x-show="!sitesLoading && sites.length > 0 && filteredSites.length === 0" class="s365-empty">
+              <p>No saved points match that search.</p>
+            </div>
+
+            <div x-show="!sitesLoading && filteredSites.length > 0">
+              <template x-for="(site, idx) in filteredSites" :key="site.id">
                 <div class="s365-site-item"
                      :class="{ nearest: idx === 0 && site.distance_m != null }"
                      @click="selectSite(site)">

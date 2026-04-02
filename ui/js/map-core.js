@@ -2,7 +2,7 @@
  * S365MapCore -- Map initialization and basemap management for Survey365.
  *
  * Creates a full-viewport MapLibre GL JS map with:
- *   - MapTiler basemaps (Street, Satellite, Topo) with CARTO fallback
+ *   - MapTiler basemaps (Street, Satellite, Topo) with public raster fallbacks
  *   - NavigationControl, GeolocateControl, ScaleControl
  *   - Basemap switching that preserves overlay layers
  *   - Base station marker with accuracy circle
@@ -38,15 +38,33 @@
     }
   };
 
-  /* Fallback when no MapTiler key is available */
-  var FALLBACK_BASEMAP = {
-    tiles: [
-      'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-      'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-      'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'
-    ],
-    tileSize: 256,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+  /* Fallback basemaps when no MapTiler key is available */
+  var FALLBACK_BASEMAPS = {
+    street: {
+      tiles: [
+        'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+        'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
+        'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png'
+      ],
+      tileSize: 256,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
+    },
+    satellite: {
+      tiles: [
+        'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+      ],
+      tileSize: 256,
+      attribution: 'Tiles &copy; Esri'
+    },
+    topo: {
+      tiles: [
+        'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',
+        'https://b.tile.opentopomap.org/{z}/{x}/{y}.png',
+        'https://c.tile.opentopomap.org/{z}/{x}/{y}.png'
+      ],
+      tileSize: 256,
+      attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, map style &copy; <a href="https://opentopomap.org">OpenTopoMap</a>'
+    }
   };
 
   /* -------------------------------------------------------------------
@@ -75,33 +93,45 @@
     };
   }
 
-  /* -------------------------------------------------------------------
-   * _buildInitialStyle -- construct the initial MapLibre style object
-   * ------------------------------------------------------------------- */
-  function _buildInitialStyle(basemapKey) {
+  function _resolveBasemapSource(basemapKey) {
     var resolved = _buildTileUrls(basemapKey);
-    var source;
 
     if (resolved) {
-      source = {
+      return {
         type: 'raster',
         tiles: resolved.tiles,
         tileSize: resolved.tileSize,
         attribution: resolved.attribution
       };
-    } else {
-      source = {
-        type: 'raster',
-        tiles: FALLBACK_BASEMAP.tiles,
-        tileSize: FALLBACK_BASEMAP.tileSize,
-        attribution: FALLBACK_BASEMAP.attribution
-      };
     }
 
+    var fallback = FALLBACK_BASEMAPS[basemapKey] || FALLBACK_BASEMAPS.street;
+    return {
+      type: 'raster',
+      tiles: fallback.tiles,
+      tileSize: fallback.tileSize,
+      attribution: fallback.attribution
+    };
+  }
+
+  function _setControlTooltip(selector, label) {
+    if (!_map) return;
+
+    var button = _map.getContainer().querySelector(selector);
+    if (!button) return;
+
+    button.setAttribute('title', label);
+    button.setAttribute('aria-label', label);
+  }
+
+  /* -------------------------------------------------------------------
+   * _buildInitialStyle -- construct the initial MapLibre style object
+   * ------------------------------------------------------------------- */
+  function _buildInitialStyle(basemapKey) {
     return {
       version: 8,
       sources: {
-        'basemap': source
+        'basemap': _resolveBasemapSource(basemapKey)
       },
       layers: [
         { id: 'basemap', type: 'raster', source: 'basemap' }
@@ -138,7 +168,9 @@
     });
 
     /* Navigation control -- bottom right */
-    _map.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'bottom-right');
+    _map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
+    _setControlTooltip('.maplibregl-ctrl-zoom-in', 'Zoom in');
+    _setControlTooltip('.maplibregl-ctrl-zoom-out', 'Zoom out');
 
     /* Scale control -- bottom left */
     _map.addControl(new maplibregl.ScaleControl({ maxWidth: 150, unit: 'imperial' }), 'bottom-left');
@@ -152,6 +184,7 @@
         showAccuracyCircle: true
       });
       _map.addControl(_geolocateCtrl, 'bottom-right');
+      _setControlTooltip('.maplibregl-ctrl-geolocate', 'Find my location');
 
       /* Track user position for proximity sorting */
       _geolocateCtrl.on('geolocate', function (e) {
@@ -185,18 +218,7 @@
     if (!BASEMAPS[basemapKey]) return;
     _currentBasemap = basemapKey;
 
-    var resolved = _buildTileUrls(basemapKey);
-    var tiles, tileSize, attribution;
-
-    if (resolved) {
-      tiles = resolved.tiles;
-      tileSize = resolved.tileSize;
-      attribution = resolved.attribution;
-    } else {
-      tiles = FALLBACK_BASEMAP.tiles;
-      tileSize = FALLBACK_BASEMAP.tileSize;
-      attribution = FALLBACK_BASEMAP.attribution;
-    }
+    var sourceDef = _resolveBasemapSource(basemapKey);
 
     var source = _map.getSource('basemap');
     if (source) {
@@ -207,9 +229,9 @@
 
     _map.addSource('basemap', {
       type: 'raster',
-      tiles: tiles,
-      tileSize: tileSize,
-      attribution: attribution
+      tiles: sourceDef.tiles,
+      tileSize: sourceDef.tileSize,
+      attribution: sourceDef.attribution
     });
 
     /* Insert basemap layer at the bottom, below all overlays */

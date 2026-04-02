@@ -99,6 +99,7 @@ function survey365App() {
     sites: [],
     sitesLoading: false,
     showSiteList: false,
+    siteSearch: '',
 
     /* ---------------------------------------------------------------
      * Mode Panel (bottom sheet)
@@ -148,6 +149,21 @@ function survey365App() {
       var clsMap = { 'GPS': 'gps', 'Galileo': 'gal', 'BeiDou': 'bds', 'GLONASS': 'glo', 'SBAS': 'sbas' };
       return Object.keys(counts).map(function (name) {
         return { name: name, used: counts[name].used, total: counts[name].total, cls: clsMap[name] || '' };
+      });
+    },
+
+    get filteredSites() {
+      var query = (this.siteSearch || '').trim().toLowerCase();
+      if (!query) return this.sites;
+
+      return this.sites.filter(function (site) {
+        return [
+          site.name,
+          site.notes,
+          site.source
+        ].some(function (value) {
+          return value && String(value).toLowerCase().indexOf(query) !== -1;
+        });
       });
     },
 
@@ -723,6 +739,7 @@ function survey365App() {
     openModePanel() {
       this.showModePanel = true;
       this.modePanelView = 'site_select';
+      this.siteSearch = '';
       this._loadSites();
     },
 
