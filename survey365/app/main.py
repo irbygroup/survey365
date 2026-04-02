@@ -47,18 +47,26 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-# Rotating file handler: data/logs/survey365.log (5MB x 3 backups)
-_log_dir = Path(__file__).parent.parent / "data" / "logs"
-_log_dir.mkdir(parents=True, exist_ok=True)
-_file_handler = logging.handlers.RotatingFileHandler(
-    _log_dir / "survey365.log",
-    maxBytes=5 * 1024 * 1024,
-    backupCount=3,
-)
-_file_handler.setFormatter(_log_fmt)
-logging.getLogger().addHandler(_file_handler)
-
 logger = logging.getLogger("survey365")
+
+# Rotating file handler: colocate logs with the active database when configured.
+_db_path = os.environ.get("SURVEY365_DB")
+if _db_path:
+    _log_dir = Path(_db_path).resolve().parent / "logs"
+else:
+    _log_dir = Path(__file__).parent.parent / "data" / "logs"
+
+try:
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    _file_handler = logging.handlers.RotatingFileHandler(
+        _log_dir / "survey365.log",
+        maxBytes=5 * 1024 * 1024,
+        backupCount=3,
+    )
+    _file_handler.setFormatter(_log_fmt)
+    logging.getLogger().addHandler(_file_handler)
+except OSError:
+    logger.warning("File logging disabled; unable to write %s", _log_dir)
 
 
 @asynccontextmanager
