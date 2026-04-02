@@ -224,7 +224,7 @@
       maxZoom: 22,
       minZoom: 3,
       fadeDuration: 100,
-      attributionControl: true,
+      attributionControl: false,
       pitchWithRotate: false
     });
 
@@ -233,7 +233,8 @@
     _setControlTooltip('.maplibregl-ctrl-zoom-in', 'Zoom in');
     _setControlTooltip('.maplibregl-ctrl-zoom-out', 'Zoom out');
 
-    /* Scale control -- bottom left */
+    /* Attribution + scale -- bottom left */
+    _map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
     _map.addControl(new maplibregl.ScaleControl({ maxWidth: 150, unit: 'imperial' }), 'bottom-left');
 
     /* Geolocate control -- phone GPS blue dot */

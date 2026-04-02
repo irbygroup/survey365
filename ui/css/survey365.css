@@ -1853,10 +1853,21 @@ html, body {
   margin-left: 8px;
 }
 
+.maplibregl-ctrl-bottom-left .maplibregl-ctrl-attrib {
+  margin-bottom: 16px !important;
+  margin-left: 8px !important;
+  border-radius: 999px !important;
+  background: rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.16) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  padding: 4px 10px !important;
+}
+
 .maplibregl-ctrl-bottom-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   right: 168px;
   bottom: 24px;
 }
@@ -1870,27 +1881,41 @@ html, body {
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group {
   display: flex;
   flex-direction: row;
-  gap: 8px;
+  gap: 0;
   margin: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  overflow: visible;
+  background: rgba(255, 255, 255, 0.95) !important;
+  box-shadow: var(--s365-panel-shadow) !important;
+  border-radius: var(--s365-panel-radius) !important;
+  overflow: hidden;
 }
 
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button {
   width: var(--s365-touch-min) !important;
   height: var(--s365-touch-min) !important;
   border: none !important;
-  border-radius: var(--s365-panel-radius) !important;
-  background-color: rgba(255, 255, 255, 0.95) !important;
-  box-shadow: var(--s365-panel-shadow) !important;
+  border-radius: 0 !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
   transition: background 0.15s;
+}
+
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button + button {
+  border-left: 1px solid rgba(148, 163, 184, 0.22) !important;
+}
+
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:first-child {
+  border-top-left-radius: var(--s365-panel-radius) !important;
+  border-bottom-left-radius: var(--s365-panel-radius) !important;
+}
+
+.maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:last-child {
+  border-top-right-radius: var(--s365-panel-radius) !important;
+  border-bottom-right-radius: var(--s365-panel-radius) !important;
 }
 
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:hover,
 .maplibregl-ctrl-bottom-right .maplibregl-ctrl-group button:active {
-  background-color: rgba(255, 255, 255, 1) !important;
+  background-color: rgba(248, 250, 252, 1) !important;
 }
 
 /* GeolocateControl blue dot */
