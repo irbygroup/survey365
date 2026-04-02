@@ -27,6 +27,7 @@ function survey365App() {
     defaultZoom: 12,
     initialCenterResolved: false,
     initialCenterApplied: false,
+    initialCenterSource: '',
 
     /* ---------------------------------------------------------------
      * Project State
@@ -264,6 +265,7 @@ function survey365App() {
       document.addEventListener('s365:user-position', function () {
         self.initialCenterResolved = true;
         self.initialCenterApplied = true;
+        self.initialCenterSource = 'browser';
       });
       document.addEventListener('s365:user-position-unavailable', function () {
         self.initialCenterResolved = true;
@@ -671,18 +673,40 @@ function survey365App() {
     },
 
     _centerOnBaseIfNeeded() {
-      if (this.initialCenterApplied || !this.initialCenterResolved || !this.mapReady || !window.S365MapCore) {
+      if (!this.initialCenterResolved || !this.mapReady || !window.S365MapCore) {
+        return;
+      }
+
+      if (this.initialCenterSource === 'browser' || this.initialCenterSource === 'base') {
         return;
       }
 
       var lat = Number(this.gnss.latitude);
       var lon = Number(this.gnss.longitude);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) {
+      var hasGnssBase = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0);
+
+      if (!hasGnssBase && this.modeSite) {
+        lat = Number(this.modeSite.lat);
+        lon = Number(this.modeSite.lon);
+        hasGnssBase = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0);
+      }
+
+      if (hasGnssBase) {
+        S365MapCore.centerOnBase(lat, lon);
+        this.initialCenterApplied = true;
+        this.initialCenterSource = 'base';
         return;
       }
 
-      S365MapCore.centerOnBase(lat, lon);
+      if (this.initialCenterSource === 'default') {
+        return;
+      }
+
+      if (window.S365MapCore && typeof window.S365MapCore.flyTo === 'function') {
+        window.S365MapCore.flyTo(this.defaultLat, this.defaultLon, this.defaultZoom);
+      }
       this.initialCenterApplied = true;
+      this.initialCenterSource = 'default';
     },
 
     /* ---------------------------------------------------------------

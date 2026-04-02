@@ -622,6 +622,15 @@
     _map.flyTo({ center: [lon, lat], zoom: Math.max(_map.getZoom(), 16), duration: 800 });
   }
 
+  function flyTo(lat, lon, zoom) {
+    if (!_map || !lat || !lon) return;
+    _map.flyTo({
+      center: [lon, lat],
+      zoom: zoom || _map.getZoom(),
+      duration: 800
+    });
+  }
+
   /* -------------------------------------------------------------------
    * getUserPosition -- return the latest phone GPS position
    * ------------------------------------------------------------------- */
@@ -665,6 +674,7 @@
     updateBaseMarker: updateBaseMarker,
     updateAccuracyCircle: updateAccuracyCircle,
     centerOnBase: centerOnBase,
+    flyTo: flyTo,
     getUserPosition: getUserPosition,
     getMap: getMap,
     setMaptilerKey: setMaptilerKey
