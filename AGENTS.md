@@ -4,8 +4,7 @@ Pointers for AI coding agents working in this repository.
 
 ## Documentation
 
-- [`CLAUDE.md`](CLAUDE.md) — Project overview, Pi access, deploy instructions, managed infrastructure
-- [`survey365/CLAUDE.md`](survey365/CLAUDE.md) — App architecture, API routes, tech stack, GNSS architecture
+- [`CLAUDE.md`](CLAUDE.md) — Project overview, Pi access, deploy instructions, resilient-mode operations, and Survey365 architecture
 
 ## Key Infrastructure Files
 
