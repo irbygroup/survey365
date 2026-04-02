@@ -106,7 +106,7 @@
       layers: [
         { id: 'basemap', type: 'raster', source: 'basemap' }
       ],
-      glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
+      glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf'
     };
   }
 
@@ -144,23 +144,25 @@
     _map.addControl(new maplibregl.ScaleControl({ maxWidth: 150, unit: 'imperial' }), 'bottom-left');
 
     /* Geolocate control -- phone GPS blue dot */
-    _geolocateCtrl = new maplibregl.GeolocateControl({
-      positionOptions: { enableHighAccuracy: true },
-      trackUserLocation: true,
-      showUserHeading: true,
-      showAccuracyCircle: true
-    });
-    _map.addControl(_geolocateCtrl, 'bottom-right');
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      _geolocateCtrl = new maplibregl.GeolocateControl({
+        positionOptions: { enableHighAccuracy: true },
+        trackUserLocation: true,
+        showUserHeading: true,
+        showAccuracyCircle: true
+      });
+      _map.addControl(_geolocateCtrl, 'bottom-right');
 
-    /* Track user position for proximity sorting */
-    _geolocateCtrl.on('geolocate', function (e) {
-      _userPosition = {
-        lat: e.coords.latitude,
-        lon: e.coords.longitude,
-        accuracy: e.coords.accuracy
-      };
-      document.dispatchEvent(new CustomEvent('s365:user-position', { detail: _userPosition }));
-    });
+      /* Track user position for proximity sorting */
+      _geolocateCtrl.on('geolocate', function (e) {
+        _userPosition = {
+          lat: e.coords.latitude,
+          lon: e.coords.longitude,
+          accuracy: e.coords.accuracy
+        };
+        document.dispatchEvent(new CustomEvent('s365:user-position', { detail: _userPosition }));
+      });
+    }
 
     /* After map loads, add overlay-related sources */
     _map.on('load', function () {

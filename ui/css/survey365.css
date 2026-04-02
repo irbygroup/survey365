@@ -1162,28 +1162,73 @@ html, body {
 /* --- Admin Page Styles --- */
 .s365-admin-page {
   min-height: 100vh;
-  height: auto;
-  overflow: auto;
-  background: #f8fafc;
+  height: auto !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  background:
+    linear-gradient(180deg, #e2e8f0 0%, #f8fafc 180px),
+    #f8fafc;
+  color: #0f172a;
 }
 
 .s365-admin-header {
-  background: #0f172a;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
   color: #ffffff;
-  padding: 16px 20px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
   gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
 }
 
-.s365-admin-header a {
-  color: #94a3b8;
+.s365-admin-header-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.s365-admin-kicker {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: #bfdbfe;
+  margin-bottom: 2px;
+}
+
+.s365-admin-header a,
+.s365-admin-nav {
+  color: #f8fafc;
   text-decoration: none;
   font-size: 14px;
 }
 
-.s365-admin-header a:hover {
+.s365-admin-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.s365-admin-nav:hover {
+  background: rgba(255, 255, 255, 0.2);
   color: #ffffff;
+}
+
+.s365-admin-nav-back {
+  width: 40px;
+  padding: 0;
 }
 
 .s365-admin-header h1 {
@@ -1191,20 +1236,25 @@ html, body {
   font-weight: 700;
   margin: 0;
   flex: 1;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .s365-admin-content {
   max-width: 800px;
   margin: 0 auto;
-  padding: 20px 16px;
+  padding: 20px 16px 80px;
 }
 
 .s365-admin-section {
   background: #ffffff;
-  border-radius: 12px;
+  border-radius: 16px;
   padding: 20px;
   margin-bottom: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.18);
 }
 
 .s365-admin-section h2 {
@@ -1219,6 +1269,14 @@ html, body {
 .s365-admin-section table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 640px;
+}
+
+.s365-admin-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -4px;
+  padding: 0 4px 4px 4px;
 }
 
 .s365-admin-section table th,
@@ -1227,6 +1285,7 @@ html, body {
   text-align: left;
   border-bottom: 1px solid #f1f5f9;
   font-size: 14px;
+  vertical-align: top;
 }
 
 .s365-admin-section table th {
@@ -1240,6 +1299,7 @@ html, body {
 .s365-admin-section .admin-actions {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .s365-admin-section .admin-actions button {
@@ -1320,6 +1380,39 @@ html, body {
 
 .s365-empty p {
   font-size: 15px;
+}
+
+@media (max-width: 720px) {
+  .s365-admin-page {
+    min-height: 100%;
+  }
+
+  .s365-admin-header {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .s365-admin-header h1 {
+    font-size: 18px;
+  }
+
+  .s365-admin-content {
+    padding: 16px 12px 96px;
+  }
+
+  .s365-admin-section {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .s365-admin-section table {
+    min-width: 560px;
+  }
+
+  .s365-admin-nav {
+    min-height: 38px;
+    padding: 0 12px;
+  }
 }
 
 /* --- MapLibre Control Overrides --- */
