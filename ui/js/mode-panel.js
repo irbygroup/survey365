@@ -28,6 +28,8 @@ function survey365App() {
     initialCenterResolved: false,
     initialCenterApplied: false,
     initialCenterSource: '',
+    initialCenterDeadlineAt: 0,
+    _initialCenterRetryTimer: null,
 
     /* ---------------------------------------------------------------
      * Project State
@@ -263,11 +265,14 @@ function survey365App() {
         self._centerOnBaseIfNeeded();
       });
       document.addEventListener('s365:user-position', function () {
+        self._clearInitialCenterRetry();
         self.initialCenterResolved = true;
         self.initialCenterApplied = true;
         self.initialCenterSource = 'browser';
+        self.initialCenterDeadlineAt = 0;
       });
       document.addEventListener('s365:user-position-unavailable', function () {
+        self.initialCenterDeadlineAt = Date.now() + 4000;
         self.initialCenterResolved = true;
         self._centerOnBaseIfNeeded();
       });
@@ -672,6 +677,26 @@ function survey365App() {
       return label;
     },
 
+    _clearInitialCenterRetry() {
+      if (this._initialCenterRetryTimer) {
+        clearTimeout(this._initialCenterRetryTimer);
+        this._initialCenterRetryTimer = null;
+      }
+    },
+
+    _scheduleInitialCenterRetry() {
+      var self = this;
+
+      if (this._initialCenterRetryTimer) {
+        return;
+      }
+
+      this._initialCenterRetryTimer = setTimeout(function () {
+        self._initialCenterRetryTimer = null;
+        self._centerOnBaseIfNeeded();
+      }, 500);
+    },
+
     _centerOnBaseIfNeeded() {
       if (!this.initialCenterResolved || !this.mapReady || !window.S365MapCore) {
         return;
@@ -692,9 +717,11 @@ function survey365App() {
       }
 
       if (hasGnssBase) {
+        this._clearInitialCenterRetry();
         S365MapCore.centerOnBase(lat, lon);
         this.initialCenterApplied = true;
         this.initialCenterSource = 'base';
+        this.initialCenterDeadlineAt = 0;
         return;
       }
 
@@ -702,11 +729,18 @@ function survey365App() {
         return;
       }
 
+      if (this.initialCenterDeadlineAt && Date.now() < this.initialCenterDeadlineAt) {
+        this._scheduleInitialCenterRetry();
+        return;
+      }
+
+      this._clearInitialCenterRetry();
       if (window.S365MapCore && typeof window.S365MapCore.flyTo === 'function') {
         window.S365MapCore.flyTo(this.defaultLat, this.defaultLon, this.defaultZoom);
       }
       this.initialCenterApplied = true;
       this.initialCenterSource = 'default';
+      this.initialCenterDeadlineAt = 0;
     },
 
     /* ---------------------------------------------------------------
