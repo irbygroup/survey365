@@ -55,10 +55,15 @@ cleanup() {
 
     if [[ "$ROOT_WAS_RO" == "true" && "$REBOOT_REQUESTED" != "true" ]]; then
         info "Restoring read-only root filesystem..."
-        if [[ -x /usr/local/bin/survey365-root-ro ]]; then
+        if [[ -x /usr/local/bin/survey365-maint-ro ]]; then
+            sudo /usr/local/bin/survey365-maint-ro >/dev/null 2>&1 || true
+        elif [[ -x /usr/local/bin/survey365-root-ro ]]; then
             sudo /usr/local/bin/survey365-root-ro >/dev/null 2>&1 || true
         else
             sudo sync >/dev/null 2>&1 || true
+            if mountpoint -q /boot/firmware; then
+                sudo mount -o remount,ro /boot/firmware >/dev/null 2>&1 || true
+            fi
             sudo mount -o remount,ro / >/dev/null 2>&1 || true
         fi
     fi
@@ -73,10 +78,15 @@ ensure_root_writable() {
     if [[ "$opts" =~ (^|,)ro(,|$) ]]; then
         ROOT_WAS_RO=true
         info "Remounting / read-write for update..."
-        if [[ -x /usr/local/bin/survey365-root-rw ]]; then
+        if [[ -x /usr/local/bin/survey365-maint-rw ]]; then
+            sudo /usr/local/bin/survey365-maint-rw
+        elif [[ -x /usr/local/bin/survey365-root-rw ]]; then
             sudo /usr/local/bin/survey365-root-rw
         else
             sudo mount -o remount,rw /
+            if mountpoint -q /boot/firmware; then
+                sudo mount -o remount,rw /boot/firmware || true
+            fi
         fi
     fi
 }
