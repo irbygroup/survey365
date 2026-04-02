@@ -34,6 +34,8 @@
   var _backendDownSince = null;
   var _wsOpenTimer = null;
   var _pollingAnnounced = false;
+  var _started = false;
+  var _connecting = false;
 
   /* -------------------------------------------------------------------
    * _dispatch -- send a status event to the DOM
@@ -177,6 +179,7 @@
    * WebSocket connection
    * ------------------------------------------------------------------- */
   function _connectWs() {
+    _connecting = true;
     if (_ws) {
       try { _ws.close(); } catch (_) { /* ignore */ }
       _ws = null;
@@ -193,6 +196,7 @@
     try {
       _ws = new WebSocket(url);
     } catch (err) {
+      _connecting = false;
       _onWsFail();
       return;
     }
@@ -210,6 +214,7 @@
       _wsOpenTimer = null;
       clearTimeout(_reconnectTimer);
       _reconnectTimer = null;
+      _connecting = false;
       _connected = true;
       _wsFailCount = 0;
       _stopPolling();
@@ -235,6 +240,7 @@
     _ws.onclose = function () {
       clearTimeout(_wsOpenTimer);
       _wsOpenTimer = null;
+      _connecting = false;
       var wasConnected = _connected;
       _connected = false;
       clearInterval(_keepaliveTimer);
@@ -270,6 +276,10 @@
    * Public API
    * ------------------------------------------------------------------- */
   function connect() {
+    if (_started || _connecting || _connected || _ws) {
+      return;
+    }
+    _started = true;
     _wsFailCount = 0;
     _dispatchBackendState('init');
     _startHealthMonitor();
@@ -277,6 +287,8 @@
   }
 
   function disconnect() {
+    _started = false;
+    _connecting = false;
     clearTimeout(_reconnectTimer);
     clearTimeout(_wsOpenTimer);
     clearInterval(_keepaliveTimer);
