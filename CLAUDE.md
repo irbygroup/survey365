@@ -32,7 +32,7 @@ The update script fast-forwards to `origin/main`, installs pip deps if needed, a
 ```bash
 ssh jaredirby@<pi-host>
 cd ~/rtk-surveying
-sudo bash survey365/install.sh --user=jaredirby
+sudo bash survey365/scripts/install.sh --user=jaredirby
 ```
 
 ## Key Services on Pi
@@ -52,7 +52,7 @@ sudo bash survey365/install.sh --user=jaredirby
 
 ## Managed Infrastructure
 
-All Pi infrastructure is managed by `survey365/install.sh`. Config files in the repo are **templates** with `{user}` and `{home}` placeholders — never edit the deployed copies directly.
+All Pi infrastructure is managed by `survey365/scripts/install.sh`. Config files in the repo are **templates** with `{user}` and `{home}` placeholders — never edit the deployed copies directly.
 
 ### Managed files
 
@@ -63,14 +63,14 @@ All Pi infrastructure is managed by `survey365/install.sh`. Config files in the 
 | `survey365/systemd/survey365-update.service` | `/etc/systemd/system/survey365-update.service` | Yes |
 | `survey365/systemd/survey365-update.timer` | `/etc/systemd/system/survey365-update.timer` | Yes |
 | `survey365/nginx/survey365.conf` | `/etc/nginx/sites-available/survey365` | Yes |
-| udev rule (inline in install.sh) | `/etc/udev/rules.d/99-survey365-gnss.rules` | No |
-| sudoers (inline in install.sh) | `/etc/sudoers.d/survey365` | No |
+| udev rule (inline in `scripts/install.sh`) | `/etc/udev/rules.d/99-survey365-gnss.rules` | No |
+| sudoers (inline in `scripts/install.sh`) | `/etc/sudoers.d/survey365` | No |
 
 ### Rules
 
-- **All infra changes go through the repo templates** — `install.sh` deploys them.
+- **All infra changes go through the repo templates** — `scripts/install.sh` deploys them.
 - `update.sh` auto-deploys systemd unit and nginx config changes on every pull.
-- **New services, sudoers rules, or udev rules require re-running `install.sh`** on the Pi.
+- **New services, sudoers rules, or udev rules require re-running `scripts/install.sh`** on the Pi.
 - Systemd templates use `{user}` and `{home}` — `sed` substitutes them at deploy time.
 - Nginx config has no placeholders — it's copied directly.
 

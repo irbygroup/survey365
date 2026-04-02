@@ -204,7 +204,7 @@ Survey365 now owns the GNSS receiver directly. There is no separate base-station
 
 ```bash
 cd ~/rtk-surveying
-sudo bash survey365/install.sh --user=jaredirby
+sudo bash survey365/scripts/install.sh --user=jaredirby
 ```
 
 The installer creates the Python environment, initializes the database, deploys the `/dev/ttyGNSS` udev rule, installs nginx and systemd units, and grants serial access via the `dialout` group.

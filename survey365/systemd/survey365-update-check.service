@@ -1,4 +1,4 @@
-# Managed by survey365/install.sh — deployed to /etc/systemd/system/survey365-update-check.service
+# Managed by survey365/scripts/install.sh — deployed to /etc/systemd/system/survey365-update-check.service
 [Unit]
 Description=Survey365 Check For Updates
 After=network-online.target

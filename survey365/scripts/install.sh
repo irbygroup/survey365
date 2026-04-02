@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Survey365 installer for Raspberry Pi
-# Run: sudo bash install.sh
+# Run: sudo bash scripts/install.sh
 # Re-run safe: all operations are idempotent
 #
 # What this does:
@@ -302,7 +302,7 @@ EOF
 
 # ── Root check ──────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
-    die "This script must be run as root. Use: sudo bash install.sh"
+    die "This script must be run as root. Use: sudo bash scripts/install.sh"
 fi
 
 # ── Parse flags ─────────────────────────────────────────────────────────
@@ -331,7 +331,7 @@ if [[ -z "$TARGET_USER" ]]; then
 fi
 
 if [[ -z "$TARGET_USER" || "$TARGET_USER" == "root" ]]; then
-    die "Cannot determine target user. Run with: sudo bash install.sh --user=<username>"
+    die "Cannot determine target user. Run with: sudo bash scripts/install.sh --user=<username>"
 fi
 
 if ! id "$TARGET_USER" &>/dev/null; then
@@ -592,8 +592,8 @@ $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-update.servi
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reboot
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get *
-$TARGET_USER ALL=(ALL) NOPASSWD: $SURVEY365_DIR/install.sh
-$TARGET_USER ALL=(ALL) NOPASSWD: $SURVEY365_DIR/install.sh *
+$TARGET_USER ALL=(ALL) NOPASSWD: $SURVEY365_DIR/scripts/install.sh
+$TARGET_USER ALL=(ALL) NOPASSWD: $SURVEY365_DIR/scripts/install.sh *
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/local/bin/survey365-root-rw
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/local/bin/survey365-root-ro
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/local/bin/survey365-maint-rw

@@ -67,7 +67,7 @@ survey365/
     survey365-update-check.timer   # Daily update check timer
   scripts/
     update.sh            # Safe fast-forward update + pip + service restart
-  install.sh             # First-time Pi installer
+    install.sh           # First-time Pi installer
   requirements.txt       # Python deps (pyubx2, pyserial, pynmeagps)
   data/
     survey365.db         # SQLite database (created by install, gitignored)
@@ -85,7 +85,7 @@ bash survey365/scripts/update.sh
 ## First-Time Install
 
 ```bash
-sudo bash survey365/install.sh --user=jaredirby
+sudo bash survey365/scripts/install.sh --user=jaredirby
 ```
 
 This installs system deps, creates venv, inits DB, deploys udev rule + nginx + systemd, enables the daily update-check timer, and starts services.

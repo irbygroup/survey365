@@ -9,7 +9,7 @@ Pointers for AI coding agents working in this repository.
 
 ## Key Infrastructure Files
 
-- [`survey365/install.sh`](survey365/install.sh) — First-time Pi installer (systemd, nginx, udev, sudoers)
+- [`survey365/scripts/install.sh`](survey365/scripts/install.sh) — First-time Pi installer (systemd, nginx, udev, sudoers)
 - [`survey365/scripts/update.sh`](survey365/scripts/update.sh) — Safe auto-update (git pull, pip, infra deploy, service restart)
 - [`survey365/nginx/survey365.conf`](survey365/nginx/survey365.conf) — Nginx reverse proxy template
 - [`survey365/systemd/`](survey365/systemd/) — Systemd unit templates (`{user}`/`{home}` placeholders)
