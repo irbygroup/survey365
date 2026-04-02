@@ -29,7 +29,10 @@ function survey365App() {
     initialCenterApplied: false,
     initialCenterSource: '',
     initialCenterDeadlineAt: 0,
+    initialStatusReady: false,
+    browserPositionUnavailable: false,
     _initialCenterRetryTimer: null,
+    _reloadPending: false,
 
     /* ---------------------------------------------------------------
      * Project State
@@ -266,14 +269,18 @@ function survey365App() {
       });
       document.addEventListener('s365:user-position', function () {
         self._clearInitialCenterRetry();
+        self.browserPositionUnavailable = false;
         self.initialCenterResolved = true;
         self.initialCenterApplied = true;
         self.initialCenterSource = 'browser';
         self.initialCenterDeadlineAt = 0;
       });
       document.addEventListener('s365:user-position-unavailable', function () {
-        self.initialCenterDeadlineAt = Date.now() + 4000;
+        self.browserPositionUnavailable = true;
         self.initialCenterResolved = true;
+        if (self.initialStatusReady && !self.initialCenterDeadlineAt) {
+          self.initialCenterDeadlineAt = Date.now() + 4000;
+        }
         self._centerOnBaseIfNeeded();
       });
       document.addEventListener('s365:start-base-at-site', function (e) {
@@ -495,6 +502,7 @@ function survey365App() {
         var res = await fetch('/api/status');
         if (res.ok) {
           var data = await res.json();
+          this.initialStatusReady = true;
           if (data.gnss) {
             this._updateGnss(data.gnss);
           }
@@ -508,6 +516,9 @@ function survey365App() {
           }
           if (data.session) {
             this.sessionId = data.session.id;
+          }
+          if (this.browserPositionUnavailable && !this.initialCenterDeadlineAt && !this.initialCenterSource) {
+            this.initialCenterDeadlineAt = Date.now() + 4000;
           }
           this._centerOnBaseIfNeeded();
         }
@@ -536,6 +547,13 @@ function survey365App() {
      * --------------------------------------------------------------- */
 
     _onStatus(msg) {
+      if (!this.initialStatusReady) {
+        this.initialStatusReady = true;
+        if (this.browserPositionUnavailable && !this.initialCenterDeadlineAt && !this.initialCenterSource) {
+          this.initialCenterDeadlineAt = Date.now() + 4000;
+        }
+      }
+
       if (msg.gnss) {
         this._updateGnss(msg.gnss);
       }
@@ -573,9 +591,13 @@ function survey365App() {
       }
 
       if (wasDown && this.backendReachable) {
-        this._fetchInitialStatus();
-        if (this.showStatusDetail) {
-          this._fetchSatellites();
+        if (!this._reloadPending) {
+          this._reloadPending = true;
+          setTimeout(function () {
+            var url = new URL(window.location.href);
+            url.searchParams.set('_reconnected', Date.now().toString());
+            window.location.replace(url.toString());
+          }, 300);
         }
       }
     },
@@ -699,6 +721,10 @@ function survey365App() {
 
     _centerOnBaseIfNeeded() {
       if (!this.initialCenterResolved || !this.mapReady || !window.S365MapCore) {
+        return;
+      }
+
+      if (this.browserPositionUnavailable && !this.initialStatusReady) {
         return;
       }
 

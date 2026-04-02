@@ -140,9 +140,18 @@
 
         <hr>
         <h4>Mode</h4>
-        <button @click="openModePanel(); menuOpen = false">Known Point Base</button>
-        <button @click="openCorsEstablish(); menuOpen = false">Establish Point (CORS)</button>
-        <button @click="startRelativeBase(); menuOpen = false">Relative Base (Quick)</button>
+        <button @click="openModePanel(); menuOpen = false"
+                :class="{ 'is-active': mode === 'known_base' }">
+          Known Point Base
+        </button>
+        <button @click="openCorsEstablish(); menuOpen = false"
+                :class="{ 'is-active': establishing }">
+          Establish Point (CORS)
+        </button>
+        <button @click="startRelativeBase(); menuOpen = false"
+                :class="{ 'is-active': mode === 'relative_base' }">
+          Relative Base (Quick)
+        </button>
         <button @click="resumeMode(); menuOpen = false">Resume Last</button>
         <button class="danger" @click="stopMode(); menuOpen = false" x-show="mode !== 'idle'">Stop Broadcasting</button>
 
