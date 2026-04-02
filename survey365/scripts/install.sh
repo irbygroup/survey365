@@ -240,6 +240,7 @@ $DATA_DEVICE	$DATA_ROOT	$DATA_FSTYPE	$DATA_MOUNT_OPTS	0	2
 tmpfs	/tmp	tmpfs	defaults,noatime,nosuid,nodev,size=64m	0	0
 tmpfs	/var/tmp	tmpfs	defaults,noatime,nosuid,nodev,size=32m	0	0
 tmpfs	/var/log	tmpfs	defaults,noatime,nosuid,nodev,size=48m	0	0
+tmpfs	/var/lib/nginx	tmpfs	defaults,noatime,nosuid,nodev,size=8m,mode=0755	0	0
 tmpfs	/var/lib/sudo	tmpfs	defaults,noatime,nosuid,nodev,size=1m,mode=0700	0	0
 tmpfs	/var/lib/chrony	tmpfs	defaults,noatime,nosuid,nodev,size=1m	0	0
 $TAILSCALE_DATA_DIR	/var/lib/tailscale	none	bind	0	0
@@ -276,6 +277,7 @@ configure_runtime_links_for_resilient_mode() {
 
 configure_resilient_os_settings() {
     local journald_dropin="/etc/systemd/journald.conf.d/survey365-volatile.conf"
+    local tmpfiles_conf="/etc/tmpfiles.d/survey365-resilient.conf"
 
     info "Configuring resilient read-only-root settings..."
     preflight_resilient_mode
@@ -286,11 +288,23 @@ configure_resilient_os_settings() {
 Storage=volatile
 EOF
 
+    mkdir -p /etc/tmpfiles.d
+    cat > "$tmpfiles_conf" <<'EOF'
+d /var/log/nginx 0755 root adm -
+d /var/lib/nginx 0755 root root -
+d /var/lib/nginx/body 0700 root root -
+d /var/lib/nginx/proxy 0700 root root -
+d /var/lib/nginx/fastcgi 0700 root root -
+d /var/lib/nginx/uwsgi 0700 root root -
+d /var/lib/nginx/scgi 0700 root root -
+EOF
+
     ensure_helper_scripts
 
-    mkdir -p /var/lib/tailscale /var/lib/chrony
+    mkdir -p /var/lib/tailscale /var/lib/chrony /var/log/nginx /var/lib/nginx/body /var/lib/nginx/proxy /var/lib/nginx/fastcgi /var/lib/nginx/uwsgi /var/lib/nginx/scgi
     migrate_dir_contents /var/lib/tailscale "$TAILSCALE_DATA_DIR"
     configure_runtime_links_for_resilient_mode
+    systemd-tmpfiles --create "$tmpfiles_conf" 2>/dev/null || true
 
     configure_cmdline_for_resilient_mode
     configure_fstab_for_resilient_mode
