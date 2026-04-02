@@ -9,7 +9,7 @@ ExecStart={home}/rtk-surveying/survey365/venv/bin/python3 {home}/rtk-surveying/s
 RemainAfterExit=yes
 
 # Environment
-Environment=SURVEY365_DB={home}/rtk-surveying/survey365/data/survey365.db
+Environment=SURVEY365_DB={data_dir}/survey365.db
 Environment=GNSS_PORT=/dev/ttyGNSS
 
 # Run as target user (dialout group provides serial access)

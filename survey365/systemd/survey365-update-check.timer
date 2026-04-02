@@ -1,0 +1,13 @@
+# Managed by survey365/install.sh — deployed to /etc/systemd/system/survey365-update-check.timer
+[Unit]
+Description=Survey365 daily update availability check
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1d
+AccuracySec=15min
+Persistent=true
+Unit=survey365-update-check.service
+
+[Install]
+WantedBy=timers.target

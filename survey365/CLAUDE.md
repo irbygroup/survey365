@@ -62,8 +62,9 @@ survey365/
   systemd/
     survey365.service    # Main app service (Group=dialout for serial)
     survey365-boot.service # Boot hardware check
-    survey365-update.service # Safe updater (boot/manual/timer target)
-    survey365-update.timer   # 5-minute periodic update check
+    survey365-update.service # Manual apply-update service
+    survey365-update-check.service # Daily update availability check
+    survey365-update-check.timer   # Daily update check timer
   scripts/
     update.sh            # Safe fast-forward update + pip + service restart
   install.sh             # First-time Pi installer
@@ -87,7 +88,7 @@ bash survey365/scripts/update.sh
 sudo bash survey365/install.sh --user=jaredirby
 ```
 
-This installs system deps, creates venv, inits DB, deploys udev rule + nginx + systemd, enables the update timer, and starts services.
+This installs system deps, creates venv, inits DB, deploys udev rule + nginx + systemd, enables the daily update-check timer, and starts services.
 
 ## Development
 

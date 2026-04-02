@@ -59,6 +59,8 @@ async def get_db():
     try:
         # Enable WAL mode for better concurrent access
         await db.execute("PRAGMA journal_mode=WAL")
+        # Favor durability over peak write throughput on field devices.
+        await db.execute("PRAGMA synchronous=FULL")
         await db.execute("PRAGMA foreign_keys=ON")
 
         # Load SpatiaLite if available

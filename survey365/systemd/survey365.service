@@ -14,7 +14,7 @@ Restart=always
 RestartSec=3
 
 # Environment
-Environment=SURVEY365_DB={home}/rtk-surveying/survey365/data/survey365.db
+Environment=SURVEY365_DB={data_dir}/survey365.db
 Environment=GNSS_PORT=/dev/ttyGNSS
 Environment=GNSS_BAUD=115200
 Environment=GNSS_BACKEND=ublox
@@ -27,7 +27,7 @@ SyslogIdentifier=survey365
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths={home}/rtk-surveying/survey365/data
+ReadWritePaths={data_dir}
 PrivateTmp=true
 
 [Install]

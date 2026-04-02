@@ -1,0 +1,16 @@
+# Managed by survey365/install.sh — deployed to /etc/systemd/system/survey365-update-check.service
+[Unit]
+Description=Survey365 Check For Updates
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={user}
+WorkingDirectory={home}/rtk-surveying
+ExecStart={home}/rtk-surveying/survey365/scripts/update.sh --auto
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=survey365-update-check

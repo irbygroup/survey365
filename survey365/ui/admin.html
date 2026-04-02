@@ -394,7 +394,7 @@
       <div class="s365-admin-section">
         <h2>System Update</h2>
         <p style="margin:0 0 12px 0; color:#64748b; font-size:14px;">
-          Survey365 checks for updates automatically on boot and every 5 minutes when the internet can reach <code>origin/main</code>.
+          Survey365 checks for updates daily. Applying an update is manual and briefly puts the controller into maintenance mode.
         </p>
 
         <div x-show="updateLoading" style="text-align:center; padding:12px 0;">
@@ -423,6 +423,9 @@
         <p x-show="!updateLoading && updateStatus.update_available" style="color:var(--s365-blue); font-size:14px; margin:8px 0;">
           Update available on <code>main</code>.
         </p>
+        <p x-show="updateStatus.update_in_progress" style="color:#92400e; font-size:14px; margin:8px 0;">
+          Update in progress. Do not remove power until Survey365 reports completion.
+        </p>
         <p x-show="!updateLoading && !updateStatus.update_available && updateStatus.repo_reachable" style="color:#166534; font-size:14px; margin:8px 0;">
           System is already on the latest <code>main</code> commit.
         </p>
@@ -430,7 +433,7 @@
           Remote repository is not reachable right now. Automatic checks will retry.
         </p>
         <p x-show="updateStatus.dirty" style="color:var(--s365-red); font-size:14px; margin:8px 0;">
-          Auto-update is blocked because tracked files are dirty.
+          Update is blocked because tracked files are dirty.
         </p>
         <template x-if="updateStatus.dirty && updateStatus.dirty_paths && updateStatus.dirty_paths.length > 0">
           <div style="margin:8px 0 12px 0; padding:10px 12px; border-radius:8px; background:#fef2f2; color:#991b1b; font-family:monospace; font-size:13px;">
@@ -551,9 +554,15 @@
             this._loadSites();
             this._loadNtrip();
             this._loadConfig();
-            this.loadUpdateStatus();
-            this._updatePollTimer = setInterval(() => this.loadUpdateStatus(), 300000);
+            await this.loadUpdateStatus();
+            this._scheduleUpdatePoll();
           }
+        },
+
+        _scheduleUpdatePoll(delayMs) {
+          if (this._updatePollTimer) clearTimeout(this._updatePollTimer);
+          var delay = delayMs != null ? delayMs : (this.updateStatus.update_in_progress ? 3000 : 3600000);
+          this._updatePollTimer = setTimeout(() => this.loadUpdateStatus(), delay);
         },
 
         async _loadProjects() {
@@ -895,18 +904,22 @@
             this.updateError = 'Network error: ' + err.message;
           }
           this.updateLoading = false;
+          this._scheduleUpdatePoll();
         },
 
         async startUpdate() {
           this.updateError = '';
           this.updateSuccess = '';
+          if (!confirm('Apply the update now? Survey365 will briefly enter maintenance mode. Do not remove power until the update finishes.')) {
+            return;
+          }
           try {
             var res = await fetch('/api/system/update', { method: 'POST' });
             if (res.ok) {
               var data = await res.json();
               this.updateSuccess = data.message || 'Update started.';
               await this.loadUpdateStatus();
-              setTimeout(() => this.loadUpdateStatus(), 3000);
+              this._scheduleUpdatePoll(3000);
             } else {
               var err = {};
               try { err = await res.json(); } catch (_) {}

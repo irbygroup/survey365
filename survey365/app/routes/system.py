@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 
 REPO_DIR = Path(__file__).resolve().parents[3]
 UPDATE_SERVICE = "survey365-update.service"
-UPDATE_TIMER = "survey365-update.timer"
+UPDATE_CHECK_TIMER = "survey365-update-check.timer"
 
 
 async def _run_cmd(*args: str, timeout: float = 20.0) -> tuple[int, str, str]:
@@ -64,8 +64,8 @@ async def get_update_status(_admin=Depends(require_admin)):
         timeout=15.0,
     )
     service_rc, service_state, _ = await _run_cmd("systemctl", "is-active", UPDATE_SERVICE)
-    timer_rc, timer_state, _ = await _run_cmd("systemctl", "is-active", UPDATE_TIMER)
-    enabled_rc, timer_enabled, _ = await _run_cmd("systemctl", "is-enabled", UPDATE_TIMER)
+    timer_rc, timer_state, _ = await _run_cmd("systemctl", "is-active", UPDATE_CHECK_TIMER)
+    enabled_rc, timer_enabled, _ = await _run_cmd("systemctl", "is-enabled", UPDATE_CHECK_TIMER)
 
     if current_rc != 0 or short_rc != 0 or branch_rc != 0:
         raise HTTPException(
