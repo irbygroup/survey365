@@ -297,6 +297,12 @@ async def delete_site(site_id: int):
         if await cursor.fetchone() is None:
             raise HTTPException(status_code=404, detail="Site not found")
 
+        # Preserve session history while releasing the foreign-key reference so
+        # site deletion does not fail for previously used points.
+        await db.execute(
+            "UPDATE sessions SET site_id = NULL WHERE site_id = ?",
+            (site_id,),
+        )
         await db.execute("DELETE FROM sites WHERE id = ?", (site_id,))
         await db.commit()
 

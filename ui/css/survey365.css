@@ -1184,24 +1184,42 @@ html, body {
   overflow-x: hidden !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
+  font-family: "Manrope", "Segoe UI", sans-serif;
   background:
-    linear-gradient(180deg, #e2e8f0 0%, #f8fafc 180px),
-    #f8fafc;
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 32%),
+    radial-gradient(circle at top right, rgba(16, 185, 129, 0.12), transparent 28%),
+    linear-gradient(180deg, #dbe7f6 0%, #eff4fb 220px, #f6f9fc 100%);
   color: #0f172a;
+}
+
+.s365-admin-page input,
+.s365-admin-page select,
+.s365-admin-page button,
+.s365-admin-page textarea {
+  font-family: "Manrope", "Segoe UI", sans-serif;
+}
+
+.s365-admin-page code,
+.s365-admin-page .s365-mono-cell,
+.s365-admin-page .s365-dirty-list,
+.s365-admin-page .site-source-badge {
+  font-family: "JetBrains Mono", "SF Mono", monospace;
 }
 
 .s365-admin-header {
   position: sticky;
   top: 0;
   z-index: 40;
-  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%);
+  background: rgba(9, 18, 33, 0.84);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   color: #ffffff;
-  padding: 14px 16px;
+  padding: 16px 20px;
   display: flex;
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.16);
 }
 
 .s365-admin-header-copy {
@@ -1230,18 +1248,21 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
-  padding: 0 14px;
+  min-height: 42px;
+  padding: 0 16px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   font-weight: 700;
   flex-shrink: 0;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
 .s365-admin-nav:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.28);
   color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .s365-admin-nav-back {
@@ -1261,57 +1282,277 @@ html, body {
 }
 
 .s365-admin-content {
-  max-width: 800px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 20px 16px 80px;
+  padding: 28px 20px 96px;
+}
+
+.s365-admin-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.9fr);
+  gap: 18px;
+  margin-bottom: 20px;
+}
+
+.s365-admin-hero-copy,
+.s365-admin-stat-card {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 24px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.s365-admin-hero-copy {
+  padding: 30px 30px 28px;
+}
+
+.s365-admin-hero-copy::after,
+.s365-admin-stat-card::after {
+  content: "";
+  position: absolute;
+  inset: auto -24px -28px auto;
+  width: 120px;
+  height: 120px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.12), transparent 68%);
+  pointer-events: none;
+}
+
+.s365-admin-hero-copy h2 {
+  margin: 0;
+  font-size: clamp(28px, 4vw, 42px);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.s365-admin-hero-copy p {
+  margin: 14px 0 0 0;
+  max-width: 56ch;
+  color: #475569;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.s365-admin-hero-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.s365-admin-stat-card {
+  padding: 18px 18px 20px;
+}
+
+.s365-admin-stat-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.s365-admin-stat-value {
+  display: block;
+  margin-top: 10px;
+  font-size: clamp(22px, 3vw, 34px);
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: #0f172a;
+}
+
+.s365-admin-stat-meta {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.s365-admin-gate,
+.s365-admin-loading {
+  min-height: calc(100vh - 92px);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.s365-admin-gate-card,
+.s365-admin-status-panel {
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 22px;
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.1);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.s365-admin-gate-card {
+  width: min(460px, 100%);
+  padding: 30px 28px;
+  text-align: center;
+}
+
+.s365-admin-gate-card h2 {
+  margin: 4px 0 10px 0;
+  font-size: 30px;
+  letter-spacing: -0.04em;
+}
+
+.s365-admin-gate-card p {
+  margin: 0 0 20px 0;
+  color: #64748b;
+}
+
+.s365-admin-status-panel {
+  width: min(520px, 100%);
+  padding: 18px 20px;
+  text-align: center;
+}
+
+.s365-admin-status-panel p {
+  margin: 0;
+  color: #475569;
 }
 
 .s365-admin-section {
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 20px;
-  margin-bottom: 16px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(255, 255, 255, 0.82);
+  border-radius: 24px;
+  padding: 24px;
+  margin-bottom: 18px;
+  box-shadow: 0 22px 44px rgba(15, 23, 42, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
 }
 
-.s365-admin-section h2 {
-  font-size: 18px;
-  font-weight: 700;
+.s365-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.s365-section-heading h2 {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
   color: #0f172a;
-  margin: 0 0 16px 0;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #e2e8f0;
+  margin: 0;
+}
+
+.s365-section-heading p {
+  margin: 8px 0 0 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.55;
+  max-width: 68ch;
+}
+
+.s365-admin-subheading {
+  margin: 22px 0 8px 0;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #2563eb;
+}
+
+.s365-section-note,
+.s365-admin-muted {
+  color: #64748b;
+}
+
+.s365-section-note {
+  margin: 0 0 14px 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.s365-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.s365-inline-label {
+  white-space: nowrap;
+  margin: 0;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.s365-admin-select-compact {
+  width: min(320px, 100%);
+  margin: 0;
+}
+
+.s365-update-grid,
+.s365-form-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.s365-form-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.s365-form-grid-3 {
+  grid-template-columns: 1.5fr repeat(2, minmax(0, 1fr));
+}
+
+.s365-form-grid-wide {
+  grid-template-columns: 2fr 1fr;
+}
+
+.s365-update-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  margin-bottom: 12px;
 }
 
 .s365-admin-section table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 640px;
+  min-width: 680px;
+  background: rgba(255, 255, 255, 0.56);
+  border-radius: 18px;
+  overflow: hidden;
 }
 
 .s365-admin-table-wrap {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  margin: 0 -4px;
-  padding: 0 4px 4px 4px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(248, 250, 252, 0.72);
 }
 
 .s365-admin-section table th,
 .s365-admin-section table td {
-  padding: 10px 12px;
+  padding: 14px 16px;
   text-align: left;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.7);
   font-size: 14px;
   vertical-align: top;
 }
 
 .s365-admin-section table th {
-  font-weight: 600;
-  color: #64748b;
+  font-weight: 800;
+  color: #475569;
   font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.1em;
+  background: rgba(241, 245, 249, 0.85);
 }
 
 .s365-admin-section .admin-actions {
@@ -1320,84 +1561,195 @@ html, body {
   flex-wrap: wrap;
 }
 
-.s365-admin-section .admin-actions button {
-  padding: 6px 12px;
-  min-height: 36px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #f8fafc;
-  color: #475569;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.s365-admin-section .admin-actions button:hover {
-  background: #e2e8f0;
-}
-
-.s365-admin-section .admin-actions button.delete {
-  color: var(--s365-red);
-  border-color: #fecaca;
-}
-
 .s365-admin-form label {
   display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: #374151;
-  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #334155;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .s365-admin-form input,
 .s365-admin-form select {
   width: 100%;
-  height: 44px;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 0 12px;
+  height: 48px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 14px;
+  padding: 0 14px;
   font-size: 15px;
   margin-bottom: 12px;
   color: #1e293b;
+  background: rgba(248, 250, 252, 0.86);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
 .s365-admin-form input:focus,
 .s365-admin-form select:focus {
-  border-color: var(--s365-blue);
+  border-color: rgba(37, 99, 235, 0.34);
   outline: none;
+  box-shadow:
+    0 0 0 4px rgba(37, 99, 235, 0.12),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.72);
+  transform: translateY(-1px);
 }
 
-.s365-admin-form button {
+.s365-checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 14px 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+.s365-checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #2563eb;
+  flex-shrink: 0;
+}
+
+.s365-readonly-input {
+  background: linear-gradient(180deg, rgba(241, 245, 249, 0.92), rgba(248, 250, 252, 0.92)) !important;
+  color: #334155 !important;
+}
+
+.s365-form-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.s365-section-cta {
+  margin-top: 14px;
+}
+
+.s365-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
   min-height: 44px;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 600;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
   cursor: pointer;
-  transition: opacity 0.15s;
+  text-decoration: none;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+  box-sizing: border-box;
 }
 
-.s365-admin-form button[type="submit"] {
-  background: var(--s365-blue);
+.s365-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.s365-btn:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.s365-btn-primary {
+  background: linear-gradient(135deg, #2563eb 0%, #0f7ad8 100%);
   color: #ffffff;
+  box-shadow: 0 14px 24px rgba(37, 99, 235, 0.2);
 }
 
-.s365-admin-form button.secondary {
-  background: #e2e8f0;
-  color: #475569;
-  margin-left: 8px;
+.s365-btn-primary:hover:not(:disabled) {
+  box-shadow: 0 18px 30px rgba(37, 99, 235, 0.24);
+}
+
+.s365-btn-secondary {
+  background: rgba(248, 250, 252, 0.88);
+  color: #334155;
+  border-color: rgba(148, 163, 184, 0.22);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+}
+
+.s365-btn-danger {
+  background: rgba(254, 242, 242, 0.94);
+  color: #b91c1c;
+  border-color: rgba(248, 113, 113, 0.26);
+  box-shadow: 0 8px 16px rgba(239, 68, 68, 0.08);
+}
+
+.s365-btn-link {
+  min-width: 140px;
+}
+
+.s365-type-pill,
+.s365-admin-page .site-source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(226, 232, 240, 0.9);
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.s365-admin-page .site-source-badge.manual { background: #dbeafe; color: #1d4ed8; }
+.s365-admin-page .site-source-badge.cors_rtk { background: #dcfce7; color: #15803d; }
+.s365-admin-page .site-source-badge.opus { background: #f3e8ff; color: #7c3aed; }
+.s365-admin-page .site-source-badge.averaged { background: #fff7ed; color: #c2410c; }
+.s365-admin-page .site-source-badge.imported { background: #e0f2fe; color: #0369a1; }
+
+.s365-mono-cell {
+  font-size: 13px;
+  color: #334155;
+}
+
+.s365-status-text {
+  margin: 10px 0 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.s365-status-success { color: #166534; }
+.s365-status-error { color: #b91c1c; }
+.s365-status-info { color: #1d4ed8; }
+.s365-status-warn { color: #92400e; }
+
+.s365-dirty-list {
+  margin: 10px 0 14px 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(254, 242, 242, 0.96);
+  border: 1px solid rgba(248, 113, 113, 0.18);
+  color: #991b1b;
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
 }
 
 /* --- Empty state --- */
 .s365-empty {
   text-align: center;
-  padding: 32px 16px;
-  color: #94a3b8;
+  padding: 34px 20px;
+  color: #64748b;
+  border: 1px dashed rgba(148, 163, 184, 0.28);
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.56);
 }
 
 .s365-empty p {
   font-size: 15px;
+  margin: 0;
 }
 
 @media (max-width: 720px) {
@@ -1406,7 +1758,7 @@ html, body {
   }
 
   .s365-admin-header {
-    padding: 12px;
+    padding: 14px 14px 14px 12px;
     gap: 10px;
   }
 
@@ -1415,12 +1767,34 @@ html, body {
   }
 
   .s365-admin-content {
-    padding: 16px 12px 96px;
+    padding: 16px 12px 92px;
+  }
+
+  .s365-admin-hero {
+    grid-template-columns: 1fr;
+  }
+
+  .s365-admin-hero-copy {
+    padding: 24px 20px;
+  }
+
+  .s365-admin-hero-stats {
+    grid-template-columns: 1fr 1fr;
   }
 
   .s365-admin-section {
-    padding: 16px;
-    border-radius: 14px;
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .s365-section-heading h2 {
+    font-size: 22px;
+  }
+
+  .s365-form-grid-2,
+  .s365-form-grid-3,
+  .s365-form-grid-wide {
+    grid-template-columns: 1fr;
   }
 
   .s365-admin-section table {
@@ -1430,6 +1804,35 @@ html, body {
   .s365-admin-nav {
     min-height: 38px;
     padding: 0 12px;
+  }
+
+  .s365-form-actions {
+    flex-direction: column;
+  }
+
+  .s365-btn,
+  .s365-btn-link {
+    width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .s365-admin-header {
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    align-items: center;
+  }
+
+  .s365-admin-hero-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .s365-toolbar {
+    align-items: stretch;
+  }
+
+  .s365-admin-select-compact {
+    width: 100%;
   }
 }
 

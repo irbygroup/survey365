@@ -12,6 +12,7 @@ Usage:
     uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 1
 """
 
+import asyncio
 import logging
 import logging.handlers
 import os
@@ -97,10 +98,20 @@ async def lifespan(app: FastAPI):
     logger.info("Survey365 shutting down...")
 
     # Stop WebSocket broadcast
-    await ws_live.stop_broadcast()
+    try:
+        await asyncio.wait_for(ws_live.stop_broadcast(), timeout=2.0)
+    except TimeoutError:
+        logger.error("Timed out stopping WebSocket broadcast")
+    except Exception:
+        logger.exception("Failed stopping WebSocket broadcast")
 
     # Stop GNSS manager
-    await gnss_manager.stop()
+    try:
+        await asyncio.wait_for(gnss_manager.stop(), timeout=8.0)
+    except TimeoutError:
+        logger.error("Timed out stopping GNSS manager")
+    except Exception:
+        logger.exception("Failed stopping GNSS manager")
 
     logger.info("Survey365 stopped")
 

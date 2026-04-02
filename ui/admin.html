@@ -7,6 +7,9 @@
   <meta name="theme-color" content="#0f172a">
   <title>Survey365 - Admin</title>
 
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <!-- Pico.css -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <!-- Survey365 custom styles -->
@@ -41,34 +44,72 @@
 
   <!-- Auth check overlay -->
   <template x-if="!authenticated && authChecked">
-    <div style="text-align:center; padding:60px 20px;">
-      <h2 style="color:#0f172a;">Authentication Required</h2>
-      <p style="color:#64748b;">You need to log in to access admin settings.</p>
-      <a href="/login.html?next=/admin.html"
-         style="display:inline-block; padding:14px 28px; background:var(--s365-blue); color:#fff; border-radius:10px; text-decoration:none; font-weight:700; font-size:16px;">
+    <div class="s365-admin-gate">
+      <div class="s365-admin-gate-card">
+        <div class="s365-admin-kicker">Secure Access</div>
+        <h2>Authentication Required</h2>
+        <p>You need to log in to access admin settings.</p>
+        <a href="/login.html?next=/admin.html" class="s365-btn s365-btn-primary s365-btn-link">
         Log In
-      </a>
+        </a>
+      </div>
     </div>
   </template>
 
   <!-- Loading -->
-  <div x-show="!authChecked" style="text-align:center; padding:60px 20px;">
-    <p aria-busy="true" style="color:#64748b;">Loading...</p>
+  <div x-show="!authChecked" class="s365-admin-loading">
+    <div class="s365-admin-status-panel">
+      <p aria-busy="true">Loading admin workspace...</p>
+    </div>
   </div>
 
   <!-- Admin Content -->
   <template x-if="authenticated && authChecked">
     <div class="s365-admin-content">
+      <section class="s365-admin-hero">
+        <div class="s365-admin-hero-copy">
+          <div class="s365-admin-kicker">Control Center</div>
+          <h2>Manage field data, connections, and system behavior from one place.</h2>
+          <p>Points, NTRIP routing, Wi-Fi provisioning, receiver behavior, updates, and access control are grouped here with a consistent workflow.</p>
+        </div>
+        <div class="s365-admin-hero-stats">
+          <div class="s365-admin-stat-card">
+            <span class="s365-admin-stat-label">Saved Points</span>
+            <strong class="s365-admin-stat-value" x-text="sites.length"></strong>
+            <span class="s365-admin-stat-meta">Project control and benchmarks</span>
+          </div>
+          <div class="s365-admin-stat-card">
+            <span class="s365-admin-stat-label">NTRIP Profiles</span>
+            <strong class="s365-admin-stat-value" x-text="ntripProfiles.length"></strong>
+            <span class="s365-admin-stat-meta">Inbound, outbound, and local caster links</span>
+          </div>
+          <div class="s365-admin-stat-card">
+            <span class="s365-admin-stat-label">Wi-Fi Networks</span>
+            <strong class="s365-admin-stat-value" x-text="wifiNetworks.length"></strong>
+            <span class="s365-admin-stat-meta">Stored adapter profiles</span>
+          </div>
+          <div class="s365-admin-stat-card">
+            <span class="s365-admin-stat-label">Updater</span>
+            <strong class="s365-admin-stat-value" x-text="updateStatus.update_in_progress ? 'Running' : (updateStatus.update_available ? 'Ready' : 'Current')"></strong>
+            <span class="s365-admin-stat-meta" x-text="updateStatus.repo_reachable ? 'Main branch status tracked' : 'Remote check unavailable'"></span>
+          </div>
+        </div>
+      </section>
 
       <!-- ===== Sites Management ===== -->
       <div class="s365-admin-section">
-        <h2>Saved Points</h2>
+        <div class="s365-section-heading">
+          <div>
+            <h2>Saved Points</h2>
+            <p>Project control points, benchmarks, and reference positions available to crews in the field.</p>
+          </div>
+        </div>
 
         <!-- Project filter -->
-        <div style="margin-bottom:16px; display:flex; align-items:center; gap:8px;">
-          <label for="project-filter" style="font-size:14px; font-weight:600; color:#374151; white-space:nowrap; margin:0;">Project:</label>
-          <select id="project-filter" x-model="filterProjectId" @change="_loadSites()"
-                  style="height:40px; border:2px solid #e2e8f0; border-radius:8px; padding:0 10px; font-size:14px; color:#1e293b; flex:1; max-width:300px;">
+        <div class="s365-toolbar">
+          <label for="project-filter" class="s365-inline-label">Project</label>
+          <select id="project-filter" name="project_filter" x-model="filterProjectId" @change="_loadSites()"
+                  class="s365-admin-select-compact">
             <option value="all">All Projects</option>
             <template x-for="p in projects" :key="p.id">
               <option :value="p.id" x-text="p.name"></option>
@@ -76,7 +117,7 @@
           </select>
         </div>
 
-        <div x-show="sitesLoading" style="text-align:center; padding:20px;">
+        <div x-show="sitesLoading" class="s365-admin-status-panel">
           <p aria-busy="true">Loading points...</p>
         </div>
 
@@ -100,9 +141,9 @@
                 <td>
                   <strong x-text="site.name"></strong>
                   <br>
-                  <small x-text="site.notes || ''" style="color:#64748b;"></small>
+                  <small class="s365-admin-muted" x-text="site.notes || ''"></small>
                 </td>
-                <td style="font-family: monospace; font-size: 13px;">
+                <td class="s365-mono-cell">
                   <span x-text="parseFloat(site.lat).toFixed(8)"></span>,
                   <span x-text="parseFloat(site.lon).toFixed(8)"></span>
                   <template x-if="site.ortho_height != null || site.height != null">
@@ -112,8 +153,8 @@
                 <td><span class="site-source-badge" :class="site.source || ''" x-text="site.source || '--'"></span></td>
                 <td>
                   <div class="admin-actions">
-                    <button @click="editSite(site)">Edit</button>
-                    <button class="delete" @click="deleteSite(site)">Delete</button>
+                    <button class="s365-btn s365-btn-secondary" @click="editSite(site)">Edit</button>
+                    <button class="s365-btn s365-btn-danger" @click="deleteSite(site)">Delete</button>
                   </div>
                 </td>
               </tr>
@@ -122,8 +163,7 @@
         </table>
         </div>
 
-        <button @click="openAddSite()"
-                style="margin-top:12px; padding:10px 20px; background:var(--s365-blue); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;">
+        <button @click="openAddSite()" class="s365-btn s365-btn-primary s365-section-cta">
           Add Point
         </button>
       </div>
@@ -131,30 +171,35 @@
       <!-- ===== Add/Edit Site Form ===== -->
       <template x-if="showSiteForm">
         <div class="s365-admin-section">
-          <h2 x-text="editingSite ? 'Edit Point' : 'Add Point'"></h2>
+          <div class="s365-section-heading">
+            <div>
+              <h2 x-text="editingSite ? 'Edit Point' : 'Add Point'"></h2>
+              <p>Capture control point coordinates, elevation, accuracy, and notes in one record.</p>
+            </div>
+          </div>
           <form @submit.prevent="saveSite()" class="s365-admin-form">
             <label for="site-name">Name</label>
-            <input type="text" id="site-name" x-model="siteForm.name" required placeholder="e.g. Oak Street PK Nail">
+            <input type="text" id="site-name" name="site_name" x-model="siteForm.name" required placeholder="e.g. Oak Street PK Nail">
 
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div class="s365-form-grid s365-form-grid-2">
               <div>
                 <label for="site-lat">Latitude</label>
-                <input type="number" id="site-lat" x-model="siteForm.lat" step="any" required placeholder="30.694512">
+                <input type="number" id="site-lat" name="site_lat" x-model="siteForm.lat" step="any" required placeholder="30.694512">
               </div>
               <div>
                 <label for="site-lon">Longitude</label>
-                <input type="number" id="site-lon" x-model="siteForm.lon" step="any" required placeholder="-88.043281">
+                <input type="number" id="site-lon" name="site_lon" x-model="siteForm.lon" step="any" required placeholder="-88.043281">
               </div>
             </div>
 
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div class="s365-form-grid s365-form-grid-2">
               <div>
                 <label for="site-height">Ellipsoid Height (m)</label>
-                <input type="number" id="site-height" x-model="siteForm.height" step="any" placeholder="Optional">
+                <input type="number" id="site-height" name="site_height" x-model="siteForm.height" step="any" placeholder="Optional">
               </div>
               <div>
                 <label for="site-source">Source</label>
-                <select id="site-source" x-model="siteForm.source">
+                <select id="site-source" name="site_source" x-model="siteForm.source">
                   <option value="manual">Manual</option>
                   <option value="cors_rtk">CORS RTK</option>
                   <option value="opus">OPUS</option>
@@ -164,34 +209,39 @@
               </div>
             </div>
 
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div class="s365-form-grid s365-form-grid-2">
               <div>
                 <label for="site-acc-h">H Accuracy (m)</label>
-                <input type="number" id="site-acc-h" x-model="siteForm.accuracy_h" step="any" placeholder="Optional">
+                <input type="number" id="site-acc-h" name="site_accuracy_h" x-model="siteForm.accuracy_h" step="any" placeholder="Optional">
               </div>
               <div>
                 <label for="site-acc-v">V Accuracy (m)</label>
-                <input type="number" id="site-acc-v" x-model="siteForm.accuracy_v" step="any" placeholder="Optional">
+                <input type="number" id="site-acc-v" name="site_accuracy_v" x-model="siteForm.accuracy_v" step="any" placeholder="Optional">
               </div>
             </div>
 
             <label for="site-notes">Notes</label>
-            <input type="text" id="site-notes" x-model="siteForm.notes" placeholder="Optional notes">
+            <input type="text" id="site-notes" name="site_notes" x-model="siteForm.notes" placeholder="Optional notes">
 
-            <div style="display:flex; gap:8px; margin-top:8px;">
-              <button type="submit" x-text="editingSite ? 'Update' : 'Add Point'"></button>
-              <button type="button" class="secondary" @click="closeSiteForm()">Cancel</button>
+            <div class="s365-form-actions">
+              <button type="submit" class="s365-btn s365-btn-primary" x-text="editingSite ? 'Update' : 'Add Point'"></button>
+              <button type="button" class="s365-btn s365-btn-secondary" @click="closeSiteForm()">Cancel</button>
             </div>
           </form>
-          <p x-show="siteFormError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="siteFormError"></p>
+          <p x-show="siteFormError" class="s365-status-text s365-status-error" x-text="siteFormError"></p>
         </div>
       </template>
 
       <!-- ===== NTRIP Profiles ===== -->
       <div class="s365-admin-section">
-        <h2>NTRIP Profiles</h2>
+        <div class="s365-section-heading">
+          <div>
+            <h2>NTRIP Profiles</h2>
+            <p>Manage outbound caster pushes, inbound correction sources, and local distribution on the LAN.</p>
+          </div>
+        </div>
 
-        <div x-show="ntripLoading" style="text-align:center; padding:20px;">
+        <div x-show="ntripLoading" class="s365-admin-status-panel">
           <p aria-busy="true">Loading profiles...</p>
         </div>
 
@@ -216,16 +266,16 @@
               <tr>
                 <td><strong x-text="p.name"></strong></td>
                 <td>
-                  <span style="font-size:12px; padding:2px 8px; border-radius:4px; background:#e2e8f0; white-space:nowrap;"
+                  <span class="s365-type-pill"
                         x-text="p.type === 'outbound_caster' ? 'Outbound' : p.type === 'inbound_cors' ? 'CORS' : 'Local'"></span>
                 </td>
-                <td style="font-family:monospace; font-size:13px;" x-text="(p.host || '') + (p.port ? ':' + p.port : '')"></td>
-                <td style="font-family:monospace; font-size:13px;" x-text="p.mountpoint || '--'"></td>
+                <td class="s365-mono-cell" x-text="(p.host || '') + (p.port ? ':' + p.port : '')"></td>
+                <td class="s365-mono-cell" x-text="p.mountpoint || '--'"></td>
                 <td x-text="p.is_default ? 'Yes' : ''"></td>
                 <td>
                   <div class="admin-actions">
-                    <button @click="editNtrip(p)">Edit</button>
-                    <button class="delete" @click="deleteNtrip(p)">Delete</button>
+                    <button class="s365-btn s365-btn-secondary" @click="editNtrip(p)">Edit</button>
+                    <button class="s365-btn s365-btn-danger" @click="deleteNtrip(p)">Delete</button>
                   </div>
                 </td>
               </tr>
@@ -234,8 +284,7 @@
         </table>
         </div>
 
-        <button @click="openAddNtrip()"
-                style="margin-top:12px; padding:10px 20px; background:var(--s365-blue); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;">
+        <button @click="openAddNtrip()" class="s365-btn s365-btn-primary s365-section-cta">
           Add NTRIP Profile
         </button>
       </div>
@@ -243,69 +292,79 @@
       <!-- ===== Add/Edit NTRIP Profile Form ===== -->
       <template x-if="showNtripForm">
         <div class="s365-admin-section">
-          <h2 x-text="editingNtrip ? 'Edit NTRIP Profile' : 'Add NTRIP Profile'"></h2>
+          <div class="s365-section-heading">
+            <div>
+              <h2 x-text="editingNtrip ? 'Edit NTRIP Profile' : 'Add NTRIP Profile'"></h2>
+              <p>Define the connection target, credentials, mountpoint, and default routing behavior.</p>
+            </div>
+          </div>
           <form @submit.prevent="saveNtrip()" class="s365-admin-form">
             <label for="ntrip-name">Profile Name</label>
-            <input type="text" id="ntrip-name" x-model="ntripForm.name" required placeholder="e.g. Emlid Caster">
+            <input type="text" id="ntrip-name" name="ntrip_name" x-model="ntripForm.name" required placeholder="e.g. Emlid Caster">
 
             <label for="ntrip-type">Type</label>
-            <select id="ntrip-type" x-model="ntripForm.type" required>
+            <select id="ntrip-type" name="ntrip_type" x-model="ntripForm.type" required>
               <option value="outbound_caster">Outbound Caster (push corrections)</option>
               <option value="inbound_cors">CORS Source (receive corrections)</option>
               <option value="local_caster">Local Caster (serve to LAN)</option>
             </select>
 
-            <div style="display:grid; grid-template-columns:2fr 1fr; gap:12px;">
+            <div class="s365-form-grid s365-form-grid-wide">
               <div>
                 <label for="ntrip-host">Host</label>
-                <input type="text" id="ntrip-host" x-model="ntripForm.host" placeholder="e.g. caster.emlid.com">
+                <input type="text" id="ntrip-host" name="ntrip_host" x-model="ntripForm.host" placeholder="e.g. caster.emlid.com">
               </div>
               <div>
                 <label for="ntrip-port">Port</label>
-                <input type="number" id="ntrip-port" x-model="ntripForm.port" placeholder="2101" min="1" max="65535">
+                <input type="number" id="ntrip-port" name="ntrip_port" x-model="ntripForm.port" placeholder="2101" min="1" max="65535">
               </div>
             </div>
 
             <label for="ntrip-mount">Mountpoint</label>
-            <input type="text" id="ntrip-mount" x-model="ntripForm.mountpoint" placeholder="e.g. SURVEY365">
+            <input type="text" id="ntrip-mount" name="ntrip_mountpoint" x-model="ntripForm.mountpoint" placeholder="e.g. SURVEY365">
 
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div class="s365-form-grid s365-form-grid-2">
               <div>
                 <label for="ntrip-user">Username</label>
-                <input type="text" id="ntrip-user" x-model="ntripForm.username" placeholder="Optional">
+                <input type="text" id="ntrip-user" name="ntrip_username" x-model="ntripForm.username" placeholder="Optional">
               </div>
               <div>
                 <label for="ntrip-pass">Password</label>
-                <input type="text" id="ntrip-pass" x-model="ntripForm.password" placeholder="Optional">
+                <input type="text" id="ntrip-pass" name="ntrip_password" x-model="ntripForm.password" placeholder="Optional">
               </div>
             </div>
 
-            <label style="display:flex; align-items:center; gap:8px; margin:12px 0;">
-              <input type="checkbox" x-model="ntripForm.is_default" style="width:auto; height:auto;">
+            <label class="s365-checkbox-row" for="ntrip-default">
+              <input type="checkbox" id="ntrip-default" name="ntrip_default" x-model="ntripForm.is_default">
               Set as default for this type
             </label>
 
             <label for="ntrip-notes">Notes</label>
-            <input type="text" id="ntrip-notes" x-model="ntripForm.notes" placeholder="Optional notes">
+            <input type="text" id="ntrip-notes" name="ntrip_notes" x-model="ntripForm.notes" placeholder="Optional notes">
 
-            <div style="display:flex; gap:8px; margin-top:8px;">
-              <button type="submit" x-text="editingNtrip ? 'Update' : 'Add Profile'"></button>
-              <button type="button" class="secondary" @click="closeNtripForm()">Cancel</button>
+            <div class="s365-form-actions">
+              <button type="submit" class="s365-btn s365-btn-primary" x-text="editingNtrip ? 'Update' : 'Add Profile'"></button>
+              <button type="button" class="s365-btn s365-btn-secondary" @click="closeNtripForm()">Cancel</button>
             </div>
           </form>
-          <p x-show="ntripFormError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="ntripFormError"></p>
+          <p x-show="ntripFormError" class="s365-status-text s365-status-error" x-text="ntripFormError"></p>
         </div>
       </template>
 
       <!-- ===== Wi-Fi Networks ===== -->
       <div class="s365-admin-section">
-        <h2>Wi-Fi Networks</h2>
-        <p style="margin:0 0 12px 0; color:#64748b; font-size:14px;">
+        <div class="s365-section-heading">
+          <div>
+            <h2>Wi-Fi Networks</h2>
+            <p>Store known Wi-Fi credentials in the database and push them onto both adapters when needed.</p>
+          </div>
+        </div>
+        <p class="s365-section-note">
           Survey365 stores known Wi-Fi networks in the database and applies them to both adapters.
           Passwords are write-only and are never shown again after save.
         </p>
 
-        <div x-show="wifiLoading" style="text-align:center; padding:20px;">
+        <div x-show="wifiLoading" class="s365-admin-status-panel">
           <p aria-busy="true">Loading Wi-Fi networks...</p>
         </div>
 
@@ -333,8 +392,8 @@
                 <td x-text="network.password_set ? 'Stored' : 'Missing'"></td>
                 <td>
                   <div class="admin-actions">
-                    <button @click="editWifi(network)">Edit</button>
-                    <button class="delete" @click="deleteWifi(network)">Delete</button>
+                    <button class="s365-btn s365-btn-secondary" @click="editWifi(network)">Edit</button>
+                    <button class="s365-btn s365-btn-danger" @click="deleteWifi(network)">Delete</button>
                   </div>
                 </td>
               </tr>
@@ -343,71 +402,80 @@
         </table>
         </div>
 
-        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
-          <button @click="openAddWifi()"
-                  style="padding:10px 20px; background:var(--s365-blue); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;">
+        <div class="s365-form-actions">
+          <button @click="openAddWifi()" class="s365-btn s365-btn-primary">
             Add Wi-Fi Network
           </button>
-          <button type="button" class="secondary" @click="applyWifi()" :disabled="wifiApplyBusy">
+          <button type="button" class="s365-btn s365-btn-secondary" @click="applyWifi()" :disabled="wifiApplyBusy">
             <span x-text="wifiApplyBusy ? 'Applying...' : 'Apply to Pi'"></span>
           </button>
         </div>
 
-        <p x-show="wifiApplySuccess" style="color:var(--s365-green); margin-top:8px; font-size:14px;" x-text="wifiApplySuccess"></p>
-        <p x-show="wifiApplyError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="wifiApplyError"></p>
+        <p x-show="wifiApplySuccess" class="s365-status-text s365-status-success" x-text="wifiApplySuccess"></p>
+        <p x-show="wifiApplyError" class="s365-status-text s365-status-error" x-text="wifiApplyError"></p>
       </div>
 
       <template x-if="showWifiForm">
         <div class="s365-admin-section">
-          <h2 x-text="editingWifi ? 'Edit Wi-Fi Network' : 'Add Wi-Fi Network'"></h2>
+          <div class="s365-section-heading">
+            <div>
+              <h2 x-text="editingWifi ? 'Edit Wi-Fi Network' : 'Add Wi-Fi Network'"></h2>
+              <p>Set network identity, secret, and connection priority before pushing settings to the Pi.</p>
+            </div>
+          </div>
           <form @submit.prevent="saveWifi()" class="s365-admin-form">
             <label for="wifi-ssid">SSID</label>
-            <input type="text" id="wifi-ssid" x-model="wifiForm.ssid" required placeholder="Network name">
+            <input type="text" id="wifi-ssid" name="wifi_ssid" x-model="wifiForm.ssid" required placeholder="Network name">
 
             <label for="wifi-password" x-text="editingWifi ? 'Password (leave blank to keep current)' : 'Password'"></label>
-            <input type="password" id="wifi-password" x-model="wifiForm.password" :required="!editingWifi" placeholder="Wi-Fi password">
+            <input type="password" id="wifi-password" name="wifi_password" x-model="wifiForm.password" :required="!editingWifi" placeholder="Wi-Fi password">
 
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div class="s365-form-grid s365-form-grid-2">
               <div>
                 <label for="wifi-priority">Priority</label>
-                <input type="number" id="wifi-priority" x-model="wifiForm.priority" step="1">
+                <input type="number" id="wifi-priority" name="wifi_priority" x-model="wifiForm.priority" step="1">
               </div>
               <div>
                 <label for="wifi-metric">Metric</label>
-                <input type="number" id="wifi-metric" x-model="wifiForm.metric" min="1" step="1">
+                <input type="number" id="wifi-metric" name="wifi_metric" x-model="wifiForm.metric" min="1" step="1">
               </div>
             </div>
 
-            <div style="display:flex; gap:8px; margin-top:8px;">
-              <button type="submit" x-text="editingWifi ? 'Update Network' : 'Add Network'"></button>
-              <button type="button" class="secondary" @click="closeWifiForm()">Cancel</button>
+            <div class="s365-form-actions">
+              <button type="submit" class="s365-btn s365-btn-primary" x-text="editingWifi ? 'Update Network' : 'Add Network'"></button>
+              <button type="button" class="s365-btn s365-btn-secondary" @click="closeWifiForm()">Cancel</button>
             </div>
           </form>
-          <p x-show="wifiFormError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="wifiFormError"></p>
+          <p x-show="wifiFormError" class="s365-status-text s365-status-error" x-text="wifiFormError"></p>
         </div>
       </template>
 
       <!-- ===== Config Settings ===== -->
       <div class="s365-admin-section">
-        <h2>Configuration</h2>
+        <div class="s365-section-heading">
+          <div>
+            <h2>Configuration</h2>
+            <p>Receiver setup, data logging, local caster output, and default map/session behavior.</p>
+          </div>
+        </div>
         <form @submit.prevent="saveConfig()" class="s365-admin-form">
-          <h3 style="margin:0 0 8px 0; color:#0f172a;">GNSS Receiver</h3>
-          <p style="margin:0 0 12px 0; color:#64748b; font-size:14px;">
+          <h3 class="s365-admin-subheading">GNSS Receiver</h3>
+          <p class="s365-section-note">
             Receiver connection and RTCM settings apply after restarting the Survey365 service.
           </p>
 
-          <div style="display:grid; grid-template-columns:2fr 1fr 1fr; gap:12px;">
+          <div class="s365-form-grid s365-form-grid-3">
             <div>
               <label for="cfg-gnss-port">Serial Port</label>
-              <input type="text" id="cfg-gnss-port" x-model="config.gnss_port" placeholder="/dev/ttyGNSS">
+              <input type="text" id="cfg-gnss-port" name="cfg_gnss_port" x-model="config.gnss_port" placeholder="/dev/ttyGNSS">
             </div>
             <div>
               <label for="cfg-gnss-baud">Baud</label>
-              <input type="number" id="cfg-gnss-baud" x-model="config.gnss_baud" min="4800" step="1">
+              <input type="number" id="cfg-gnss-baud" name="cfg_gnss_baud" x-model="config.gnss_baud" min="4800" step="1">
             </div>
             <div>
               <label for="cfg-gnss-backend">Backend</label>
-              <select id="cfg-gnss-backend" x-model="config.gnss_backend">
+              <select id="cfg-gnss-backend" name="cfg_gnss_backend" x-model="config.gnss_backend">
                 <option value="ublox">u-blox</option>
                 <option value="quectel">Quectel (stub)</option>
               </select>
@@ -415,168 +483,178 @@
           </div>
 
           <label for="cfg-rtcm-messages">RTCM Messages</label>
-          <input type="text" id="cfg-rtcm-messages" x-model="config.rtcm_messages"
+          <input type="text" id="cfg-rtcm-messages" name="cfg_rtcm_messages" x-model="config.rtcm_messages"
                  placeholder="1005(10),1077,1087,1097,1127,1230(10)">
 
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="s365-form-grid s365-form-grid-2">
             <div>
               <label for="cfg-antenna-height">Antenna Height (m)</label>
-              <input type="number" id="cfg-antenna-height" x-model="config.antenna_height_m" step="any" min="0">
+              <input type="number" id="cfg-antenna-height" name="cfg_antenna_height" x-model="config.antenna_height_m" step="any" min="0">
             </div>
             <div>
-              <label>Elevation Display</label>
-              <input type="text" value="Primary: NAVD88 ground elevation" readonly style="background:#f8fafc; color:#64748b;">
+              <label for="cfg-elevation-display">Elevation Display</label>
+              <input type="text" id="cfg-elevation-display" name="cfg_elevation_display" value="Primary: NAVD88 ground elevation" readonly class="s365-readonly-input">
             </div>
           </div>
 
-          <h3 style="margin:20px 0 8px 0; color:#0f172a;">RTCM Outputs</h3>
-          <label style="display:flex; align-items:center; gap:8px; margin:12px 0;">
-            <input type="checkbox" x-model="config.rinex_enabled" style="width:auto; height:auto;">
+          <h3 class="s365-admin-subheading">RTCM Outputs</h3>
+          <label class="s365-checkbox-row" for="cfg-rinex-enabled">
+            <input type="checkbox" id="cfg-rinex-enabled" name="cfg_rinex_enabled" x-model="config.rinex_enabled">
             Enable raw RTCM logging
           </label>
 
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="s365-form-grid s365-form-grid-2">
             <div>
               <label for="cfg-rinex-rotate">RINEX Rotate Hours</label>
-              <input type="number" id="cfg-rinex-rotate" x-model="config.rinex_rotate_hours" min="1" step="1">
+              <input type="number" id="cfg-rinex-rotate" name="cfg_rinex_rotate_hours" x-model="config.rinex_rotate_hours" min="1" step="1">
             </div>
             <div>
               <label for="cfg-rinex-dir">RINEX Data Dir</label>
-              <input type="text" id="cfg-rinex-dir" x-model="config.rinex_data_dir" placeholder="data/rinex">
+              <input type="text" id="cfg-rinex-dir" name="cfg_rinex_data_dir" x-model="config.rinex_data_dir" placeholder="data/rinex">
             </div>
           </div>
 
-          <label style="display:flex; align-items:center; gap:8px; margin:12px 0;">
-            <input type="checkbox" x-model="config.local_caster_enabled" style="width:auto; height:auto;">
+          <label class="s365-checkbox-row" for="cfg-local-caster-enabled">
+            <input type="checkbox" id="cfg-local-caster-enabled" name="cfg_local_caster_enabled" x-model="config.local_caster_enabled">
             Enable local NTRIP caster
           </label>
 
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+          <div class="s365-form-grid s365-form-grid-2">
             <div>
               <label for="cfg-local-caster-port">Local Caster Port</label>
-              <input type="number" id="cfg-local-caster-port" x-model="config.local_caster_port" min="1" max="65535" step="1">
+              <input type="number" id="cfg-local-caster-port" name="cfg_local_caster_port" x-model="config.local_caster_port" min="1" max="65535" step="1">
             </div>
             <div>
               <label for="cfg-local-caster-mount">Local Caster Mountpoint</label>
-              <input type="text" id="cfg-local-caster-mount" x-model="config.local_caster_mountpoint" placeholder="SURVEY365">
+              <input type="text" id="cfg-local-caster-mount" name="cfg_local_caster_mountpoint" x-model="config.local_caster_mountpoint" placeholder="SURVEY365">
             </div>
           </div>
 
-          <p style="margin:12px 0 0 0; color:#64748b; font-size:14px;">
+          <p class="s365-section-note">
             Default outbound NTRIP caster profiles start automatically when base mode is active.
           </p>
 
-          <h3 style="margin:20px 0 8px 0; color:#0f172a;">Map and Session</h3>
+          <h3 class="s365-admin-subheading">Map and Session</h3>
           <label for="cfg-maptiler">MapTiler API Key</label>
-          <input type="text" id="cfg-maptiler" x-model="config.maptiler_key" placeholder="Your MapTiler key">
+          <input type="text" id="cfg-maptiler" name="cfg_maptiler_key" x-model="config.maptiler_key" placeholder="Your MapTiler key">
 
-          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+          <div class="s365-form-grid s365-form-grid-3">
             <div>
               <label for="cfg-lat">Default Latitude</label>
-              <input type="number" id="cfg-lat" x-model="config.default_lat" step="any">
+              <input type="number" id="cfg-lat" name="cfg_default_lat" x-model="config.default_lat" step="any">
             </div>
             <div>
               <label for="cfg-lon">Default Longitude</label>
-              <input type="number" id="cfg-lon" x-model="config.default_lon" step="any">
+              <input type="number" id="cfg-lon" name="cfg_default_lon" x-model="config.default_lon" step="any">
             </div>
             <div>
               <label for="cfg-zoom">Default Zoom</label>
-              <input type="number" id="cfg-zoom" x-model="config.default_zoom" min="3" max="22">
+              <input type="number" id="cfg-zoom" name="cfg_default_zoom" x-model="config.default_zoom" min="3" max="22">
             </div>
           </div>
 
-          <label style="display:flex; align-items:center; gap:8px; margin:12px 0;">
-            <input type="checkbox" x-model="config.auto_resume" style="width:auto; height:auto;">
+          <label class="s365-checkbox-row" for="cfg-auto-resume">
+            <input type="checkbox" id="cfg-auto-resume" name="cfg_auto_resume" x-model="config.auto_resume">
             Auto-resume last session on boot
           </label>
 
-          <button type="submit">Save Configuration</button>
+          <button type="submit" class="s365-btn s365-btn-primary">Save Configuration</button>
         </form>
-        <p x-show="configSaved" style="color:var(--s365-green); margin-top:8px; font-size:14px;">Configuration saved.</p>
-        <p x-show="configError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="configError"></p>
+        <p x-show="configSaved" class="s365-status-text s365-status-success">Configuration saved.</p>
+        <p x-show="configError" class="s365-status-text s365-status-error" x-text="configError"></p>
       </div>
 
       <!-- ===== System Update ===== -->
       <div class="s365-admin-section">
-        <h2>System Update</h2>
-        <p style="margin:0 0 12px 0; color:#64748b; font-size:14px;">
+        <div class="s365-section-heading">
+          <div>
+            <h2>System Update</h2>
+            <p>Review remote availability, commit state, and updater health before applying a maintenance update.</p>
+          </div>
+        </div>
+        <p class="s365-section-note">
           Survey365 checks for updates daily. Applying an update is manual and briefly puts the controller into maintenance mode.
         </p>
 
-        <div x-show="updateLoading" style="text-align:center; padding:12px 0;">
+        <div x-show="updateLoading" class="s365-admin-status-panel">
           <p aria-busy="true">Checking update status...</p>
         </div>
 
-        <div x-show="!updateLoading" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:12px; margin-bottom:12px;">
+        <div x-show="!updateLoading" class="s365-update-grid">
           <div>
-            <label>Branch</label>
-            <input type="text" :value="updateStatus.branch || 'main'" readonly style="background:#f8fafc; color:#0f172a;">
+            <label for="update-branch">Branch</label>
+            <input type="text" id="update-branch" name="update_branch" :value="updateStatus.branch || 'main'" readonly class="s365-readonly-input">
           </div>
           <div>
-            <label>Current Commit</label>
-            <input type="text" :value="updateStatus.current_short || '--'" readonly style="background:#f8fafc; color:#0f172a;">
+            <label for="update-current-commit">Current Commit</label>
+            <input type="text" id="update-current-commit" name="update_current_commit" :value="updateStatus.current_short || '--'" readonly class="s365-readonly-input">
           </div>
           <div>
-            <label>Latest Main</label>
-            <input type="text" :value="updateStatus.remote_short || (updateStatus.repo_reachable ? '--' : 'offline')" readonly style="background:#f8fafc; color:#0f172a;">
+            <label for="update-latest-main">Latest Main</label>
+            <input type="text" id="update-latest-main" name="update_latest_main" :value="updateStatus.remote_short || (updateStatus.repo_reachable ? '--' : 'offline')" readonly class="s365-readonly-input">
           </div>
           <div>
-            <label>Updater</label>
-            <input type="text" :value="updateStatus.update_in_progress ? 'Running' : (updateStatus.timer_enabled ? 'Enabled' : 'Disabled')" readonly style="background:#f8fafc; color:#0f172a;">
+            <label for="update-updater">Updater</label>
+            <input type="text" id="update-updater" name="update_updater" :value="updateStatus.update_in_progress ? 'Running' : (updateStatus.timer_enabled ? 'Enabled' : 'Disabled')" readonly class="s365-readonly-input">
           </div>
         </div>
 
-        <p x-show="!updateLoading && updateStatus.update_available" style="color:var(--s365-blue); font-size:14px; margin:8px 0;">
+        <p x-show="!updateLoading && updateStatus.update_available" class="s365-status-text s365-status-info">
           Update available on <code>main</code>.
         </p>
-        <p x-show="updateStatus.update_in_progress" style="color:#92400e; font-size:14px; margin:8px 0;">
+        <p x-show="updateStatus.update_in_progress" class="s365-status-text s365-status-warn">
           Update in progress. Do not remove power until Survey365 reports completion.
         </p>
-        <p x-show="!updateLoading && !updateStatus.update_available && updateStatus.repo_reachable" style="color:#166534; font-size:14px; margin:8px 0;">
+        <p x-show="!updateLoading && !updateStatus.update_available && updateStatus.repo_reachable" class="s365-status-text s365-status-success">
           System is already on the latest <code>main</code> commit.
         </p>
-        <p x-show="!updateLoading && !updateStatus.repo_reachable" style="color:#92400e; font-size:14px; margin:8px 0;">
+        <p x-show="!updateLoading && !updateStatus.repo_reachable" class="s365-status-text s365-status-warn">
           Remote repository is not reachable right now. Automatic checks will retry.
         </p>
-        <p x-show="updateStatus.dirty" style="color:var(--s365-red); font-size:14px; margin:8px 0;">
+        <p x-show="updateStatus.dirty" class="s365-status-text s365-status-error">
           Update is blocked because tracked files are dirty.
         </p>
         <template x-if="updateStatus.dirty && updateStatus.dirty_paths && updateStatus.dirty_paths.length > 0">
-          <div style="margin:8px 0 12px 0; padding:10px 12px; border-radius:8px; background:#fef2f2; color:#991b1b; font-family:monospace; font-size:13px;">
+          <div class="s365-dirty-list">
             <template x-for="path in updateStatus.dirty_paths" :key="path">
               <div x-text="path"></div>
             </template>
           </div>
         </template>
 
-        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-          <button type="button" class="secondary" @click="loadUpdateStatus()" :disabled="updateLoading">Check Now</button>
-          <button type="button" @click="startUpdate()" :disabled="updateLoading || updateStatus.update_in_progress || updateStatus.dirty">
+        <div class="s365-form-actions">
+          <button type="button" class="s365-btn s365-btn-secondary" @click="loadUpdateStatus()" :disabled="updateLoading">Check Now</button>
+          <button type="button" class="s365-btn s365-btn-primary" @click="startUpdate()" :disabled="updateLoading || updateStatus.update_in_progress || updateStatus.dirty">
             <span x-text="updateStatus.update_in_progress ? 'Updating...' : 'Update Now'"></span>
           </button>
         </div>
 
-        <p x-show="updateSuccess" style="color:var(--s365-green); margin-top:8px; font-size:14px;" x-text="updateSuccess"></p>
-        <p x-show="updateError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="updateError"></p>
+        <p x-show="updateSuccess" class="s365-status-text s365-status-success" x-text="updateSuccess"></p>
+        <p x-show="updateError" class="s365-status-text s365-status-error" x-text="updateError"></p>
       </div>
 
       <!-- ===== Change Password ===== -->
       <div class="s365-admin-section">
-        <h2>Change Password</h2>
+        <div class="s365-section-heading">
+          <div>
+            <h2>Change Password</h2>
+            <p>Rotate the admin credential used to access the Survey365 control plane.</p>
+          </div>
+        </div>
         <form @submit.prevent="changePassword()" class="s365-admin-form">
           <label for="pw-current">Current Password</label>
-          <input type="password" id="pw-current" x-model="pwForm.current" autocomplete="current-password">
+          <input type="password" id="pw-current" name="pw_current" x-model="pwForm.current" autocomplete="current-password">
 
           <label for="pw-new">New Password</label>
-          <input type="password" id="pw-new" x-model="pwForm.new_password" autocomplete="new-password" minlength="4">
+          <input type="password" id="pw-new" name="pw_new" x-model="pwForm.new_password" autocomplete="new-password" minlength="4">
 
           <label for="pw-confirm">Confirm New Password</label>
-          <input type="password" id="pw-confirm" x-model="pwForm.confirm" autocomplete="new-password">
+          <input type="password" id="pw-confirm" name="pw_confirm" x-model="pwForm.confirm" autocomplete="new-password">
 
-          <button type="submit">Change Password</button>
+          <button type="submit" class="s365-btn s365-btn-primary">Change Password</button>
         </form>
-        <p x-show="pwSuccess" style="color:var(--s365-green); margin-top:8px; font-size:14px;">Password changed.</p>
-        <p x-show="pwError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="pwError"></p>
+        <p x-show="pwSuccess" class="s365-status-text s365-status-success">Password changed.</p>
+        <p x-show="pwError" class="s365-status-text s365-status-error" x-text="pwError"></p>
       </div>
 
     </div>

@@ -111,12 +111,13 @@ class SerialReader:
         """Stop the reader thread and close the serial port."""
         self._running = False
         self.is_connected = False
+        # Close the port before joining so any blocking read returns promptly.
+        if self._serial is not None and self._serial.is_open:
+            self._serial.close()
         if self._thread is not None:
             self._thread.join(timeout=5.0)
             self._thread = None
-        if self._serial is not None and self._serial.is_open:
-            self._serial.close()
-            self._serial = None
+        self._serial = None
         logger.info("Serial port closed")
 
     async def write(self, data: bytes):
