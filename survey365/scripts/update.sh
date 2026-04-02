@@ -8,7 +8,7 @@
 #   1. Checks origin/main for updates without mutating the repository in --auto mode
 #   2. Applies app updates only when run without --auto
 #   3. Optionally upgrades Debian packages and reboots when --os-upgrade is requested
-#   4. Re-runs scripts/install.sh so deployment logic stays single-sourced
+#   4. Re-runs scripts/setup-pi.sh so deployment logic stays single-sourced
 
 set -euo pipefail
 PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -96,7 +96,7 @@ if [[ ! -d "$REPO_DIR/.git" ]]; then
 fi
 
 if [[ ! -d "$VENV_DIR" ]]; then
-    die "Virtual environment not found at $VENV_DIR. Run scripts/install.sh first."
+    die "Virtual environment not found at $VENV_DIR. Run scripts/setup-pi.sh first."
 fi
 
 info "Repository: $REPO_DIR"
@@ -210,8 +210,8 @@ if [[ "$OS_UPGRADE" == "true" ]]; then
     ok "Debian packages upgraded"
 fi
 
-info "Re-running scripts/install.sh to deploy the updated system state..."
-sudo "$SURVEY365_DIR/scripts/install.sh" "${INSTALL_ARGS[@]}"
+info "Re-running scripts/setup-pi.sh to deploy the updated system state..."
+sudo "$SURVEY365_DIR/scripts/setup-pi.sh" "${INSTALL_ARGS[@]}"
 
 sleep 2
 

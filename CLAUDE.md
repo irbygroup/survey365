@@ -81,7 +81,7 @@ survey365/
     survey365-update-check.service
     survey365-update-check.timer
   scripts/
-    install.sh
+    setup-pi.sh
     update.sh
     enable-resilient-usb.sh
 ```
@@ -133,7 +133,7 @@ Default admin password: `survey365`
 
 ## Managed Infrastructure
 
-All Pi infrastructure is managed by `survey365/scripts/install.sh`. Repo files are templates; deployed files on the Pi are generated from them.
+All Pi infrastructure is managed by `survey365/scripts/setup-pi.sh`. Repo files are templates; deployed files on the Pi are generated from them.
 
 Managed templates:
 
@@ -149,8 +149,8 @@ Managed templates:
 Rules:
 
 - Infrastructure changes should be made in the repo templates, not directly on the Pi.
-- `survey365/scripts/update.sh` re-runs `survey365/scripts/install.sh`, so deployment logic stays single-sourced.
-- New services, sudoers changes, or resilient-mode changes require rerunning `survey365/scripts/install.sh`.
+- `survey365/scripts/update.sh` re-runs `survey365/scripts/setup-pi.sh`, so deployment logic stays single-sourced.
+- New services, sudoers changes, or resilient-mode changes require rerunning `survey365/scripts/setup-pi.sh`.
 - systemd templates use `{user}` and `{home}` placeholders.
 
 ## Core Commands
@@ -159,7 +159,7 @@ First-time install:
 
 ```bash
 cd ~/rtk-surveying
-sudo bash survey365/scripts/install.sh --user=jaredirby
+sudo bash survey365/scripts/setup-pi.sh --user=jaredirby
 ```
 
 App update:
@@ -195,7 +195,7 @@ Updates are no longer background auto-apply operations.
   - fast-forward the repo
   - reinstall Python packages when `requirements.txt` changes
   - optionally run `apt-get full-upgrade`
-  - rerun `survey365/scripts/install.sh`
+  - rerun `survey365/scripts/setup-pi.sh`
   - reboot after OS upgrades
 
 During updates on a resilient Pi, the script temporarily remounts `/` read-write and restores read-only mode on exit unless it is rebooting.
@@ -281,7 +281,7 @@ Use the maintenance helpers when you need a manual OS maintenance window outside
 - create a GPT with one ext4 partition
 - format it as `survey365-data`
 - mount it at the data root
-- call `survey365/scripts/install.sh --resilient --data-device=UUID=...`
+- call `survey365/scripts/setup-pi.sh --resilient --data-device=UUID=...`
 - optionally reboot
 
 The script refuses likely system disks and requires `--force`.
@@ -311,4 +311,4 @@ For resilient mode verification after reboot, check:
 - Wi-Fi config is in `base-station/station.conf`; apply it with `sudo bash base-station/setup-wifi.sh`.
 - Survey365 enables F9P antenna voltage during startup.
 - GNSS config lives in the Survey365 database.
-- If you are changing infra behavior, update the repo templates first, then redeploy with `survey365/scripts/install.sh` or `survey365/scripts/update.sh`.
+- If you are changing infra behavior, update the repo templates first, then redeploy with `survey365/scripts/setup-pi.sh` or `survey365/scripts/update.sh`.

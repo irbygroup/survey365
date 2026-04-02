@@ -1,4 +1,4 @@
-# Managed by survey365/scripts/install.sh — deployed to /etc/systemd/system/survey365-update-check.timer
+# Managed by survey365/scripts/setup-pi.sh — deployed to /etc/systemd/system/survey365-update-check.timer
 [Unit]
 Description=Survey365 daily update availability check
 

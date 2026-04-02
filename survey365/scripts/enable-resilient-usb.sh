@@ -98,9 +98,9 @@ UUID="$(blkid -s UUID -o value "$PARTITION")"
 ok "Mounted resilient data disk UUID=$UUID"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-INSTALL_SCRIPT="$(cd "$SCRIPT_DIR" && pwd)/install.sh"
+INSTALL_SCRIPT="$(cd "$SCRIPT_DIR" && pwd)/setup-pi.sh"
 
-info "Enabling resilient mode via scripts/install.sh..."
+info "Enabling resilient mode via scripts/setup-pi.sh..."
 "$INSTALL_SCRIPT" --user="$TARGET_USER" --resilient --data-root="$DATA_ROOT" --data-device="UUID=$UUID"
 
 if [[ "$REBOOT_AFTER" == "true" ]]; then

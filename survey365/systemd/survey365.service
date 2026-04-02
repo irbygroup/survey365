@@ -1,4 +1,4 @@
-# Managed by survey365/scripts/install.sh — deployed to /etc/systemd/system/survey365.service
+# Managed by survey365/scripts/setup-pi.sh — deployed to /etc/systemd/system/survey365.service
 [Unit]
 Description=Survey365 Field Controller
 After=network-online.target
