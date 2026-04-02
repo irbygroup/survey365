@@ -9,9 +9,10 @@ RTK GNSS base station system running on a Raspberry Pi 4. Two main components:
 
 ## Pi Access
 
-- **SSH**: `ssh jaredirby@<pi-host>` (Tailscale) or `ssh jaredirby@192.168.1.162` (LAN)
-- **Web UI**: `https://<pi-host>.alligator-perch.ts.net` (Tailscale HTTPS via `tailscale serve`)
-- **Direct IPs**: `100.68.19.26` (Tailscale), `192.168.1.162` (wlan0), `192.168.1.110` (wlan1)
+- **SSH**: `ssh jaredirby@rtkbase-pi` (Tailscale) or `ssh jaredirby@192.168.1.110` (LAN)
+- **Web UI**: `https://rtkbase-pi.alligator-perch.ts.net` (Tailscale HTTPS via `tailscale serve`)
+- **LAN**: `http://192.168.1.110` (wlan1 — wlan0 is not connected)
+- **Tailscale IP**: `100.68.19.26`
 
 ## Deploy to Pi
 
