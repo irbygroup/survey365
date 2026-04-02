@@ -632,8 +632,13 @@ else
 fi
 
 systemctl enable nginx
-systemctl reload nginx
-ok "nginx reloaded"
+if systemctl is-active --quiet nginx 2>/dev/null; then
+    systemctl reload nginx
+    ok "nginx reloaded"
+else
+    systemctl start nginx
+    ok "nginx started"
+fi
 
 # ── Print access information ────────────────────────────────────────────
 echo ""
