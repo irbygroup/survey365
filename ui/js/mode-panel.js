@@ -609,8 +609,8 @@ function survey365App() {
       this.modeSite = msg.site || null;
       this.sessionId = msg.session_id || null;
 
-      /* If switching to idle, clear establish state */
-      if (this.mode === 'idle') {
+      /* Any non-establish mode means the averaging flow is over. */
+      if (this.mode !== 'cors_establish') {
         this.establishing = false;
         this.showEstablishPanel = false;
       }
@@ -646,7 +646,7 @@ function survey365App() {
       if (!msg) return;
 
       if (!msg.establishing) {
-        if (this.establishing && msg.mode === 'idle') {
+        if (this.establishing) {
           this.establishing = false;
           this.showEstablishPanel = false;
         }
