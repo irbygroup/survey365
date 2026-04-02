@@ -235,17 +235,43 @@ async def init_db():
                     except Exception:
                         pass
 
-        # --- Migration 007: Wi-Fi networks + modem/device config keys ---
+        # --- Migration 007: Wi-Fi networks ---
         cursor = await db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='wifi_networks'"
         )
-        wifi_table_missing = await cursor.fetchone() is None
-        cursor = await db.execute(
-            "SELECT value FROM config WHERE key = 'original_imei'"
-        )
-        device_keys_missing = await cursor.fetchone() is None
-        if wifi_table_missing or device_keys_missing:
+        if await cursor.fetchone() is None:
             migration_file = MIGRATIONS_DIR / "007_network_device_config.sql"
+            if migration_file.exists():
+                sql = migration_file.read_text()
+                for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+                    try:
+                        await db.execute(stmt)
+                    except Exception:
+                        pass
+
+        # --- Migration 008: Remove legacy IMEI/device config keys ---
+        cursor = await db.execute(
+            """
+            SELECT 1
+            FROM config
+            WHERE key IN (
+                'original_imei',
+                'generated_imei',
+                'generated_model',
+                'generated_date',
+                'imei_api_token',
+                'imei_max_retries',
+                'imei_models',
+                'check_lost_device',
+                'check_verizon',
+                'check_tmobile',
+                'check_blacklist'
+            )
+            LIMIT 1
+            """
+        )
+        if await cursor.fetchone() is not None:
+            migration_file = MIGRATIONS_DIR / "008_remove_imei_device_config.sql"
             if migration_file.exists():
                 sql = migration_file.read_text()
                 for stmt in [s.strip() for s in sql.split(";") if s.strip()]:

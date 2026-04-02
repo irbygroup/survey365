@@ -496,74 +496,6 @@
         <p x-show="configError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="configError"></p>
       </div>
 
-      <!-- ===== Device Settings ===== -->
-      <div class="s365-admin-section">
-        <h2>Device Settings</h2>
-        <form @submit.prevent="saveDeviceConfig()" class="s365-admin-form">
-          <h3 style="margin:0 0 8px 0; color:#0f172a;">IMEI Metadata</h3>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-            <div>
-              <label for="dev-original-imei">Original IMEI</label>
-              <input type="text" id="dev-original-imei" x-model="deviceConfig.original_imei" placeholder="Factory IMEI">
-            </div>
-            <div>
-              <label for="dev-generated-imei">Generated IMEI</label>
-              <input type="text" id="dev-generated-imei" x-model="deviceConfig.generated_imei" placeholder="Assigned IMEI">
-            </div>
-          </div>
-
-          <div style="display:grid; grid-template-columns:2fr 1fr; gap:12px;">
-            <div>
-              <label for="dev-generated-model">Generated Model</label>
-              <input type="text" id="dev-generated-model" x-model="deviceConfig.generated_model" placeholder="Device model">
-            </div>
-            <div>
-              <label for="dev-generated-date">Generated Date</label>
-              <input type="text" id="dev-generated-date" x-model="deviceConfig.generated_date" placeholder="YYYY-MM-DD">
-            </div>
-          </div>
-
-          <h3 style="margin:20px 0 8px 0; color:#0f172a;">IMEI Lookup API</h3>
-          <label for="dev-imei-token">API Token</label>
-          <input type="password" id="dev-imei-token" x-model="imeiApiTokenInput" placeholder="Leave blank to keep current token">
-          <p style="margin:6px 0 0 0; color:#64748b; font-size:13px;" x-text="imeiApiTokenSet ? 'A token is stored. Enter a new token only to replace it.' : 'No token is currently stored.'"></p>
-
-          <div style="display:grid; grid-template-columns:1fr 2fr; gap:12px;">
-            <div>
-              <label for="dev-imei-retries">Max Retries</label>
-              <input type="number" id="dev-imei-retries" x-model="deviceConfig.imei_max_retries" min="1" step="1">
-            </div>
-            <div>
-              <label for="dev-imei-models">Allowed Models</label>
-              <input type="text" id="dev-imei-models" x-model="deviceConfig.imei_models" placeholder="Comma-separated or blank">
-            </div>
-          </div>
-
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
-            <label style="display:flex; align-items:center; gap:8px; margin:0;">
-              <input type="checkbox" x-model="deviceConfig.check_lost_device" style="width:auto; height:auto;">
-              Check lost device status
-            </label>
-            <label style="display:flex; align-items:center; gap:8px; margin:0;">
-              <input type="checkbox" x-model="deviceConfig.check_verizon" style="width:auto; height:auto;">
-              Check Verizon
-            </label>
-            <label style="display:flex; align-items:center; gap:8px; margin:0;">
-              <input type="checkbox" x-model="deviceConfig.check_tmobile" style="width:auto; height:auto;">
-              Check T-Mobile
-            </label>
-            <label style="display:flex; align-items:center; gap:8px; margin:0;">
-              <input type="checkbox" x-model="deviceConfig.check_blacklist" style="width:auto; height:auto;">
-              Check blacklist
-            </label>
-          </div>
-
-          <button type="submit">Save Device Settings</button>
-        </form>
-        <p x-show="deviceSaved" style="color:var(--s365-green); margin-top:8px; font-size:14px;">Device settings saved.</p>
-        <p x-show="deviceError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="deviceError"></p>
-      </div>
-
       <!-- ===== System Update ===== -->
       <div class="s365-admin-section">
         <h2>System Update</h2>
@@ -709,24 +641,6 @@
         },
         configSaved: false,
         configError: '',
-
-        /* Device settings */
-        deviceConfig: {
-          original_imei: '',
-          generated_imei: '',
-          generated_model: '',
-          generated_date: '',
-          imei_max_retries: '5',
-          imei_models: '',
-          check_lost_device: true,
-          check_verizon: true,
-          check_tmobile: true,
-          check_blacklist: true
-        },
-        imeiApiTokenInput: '',
-        imeiApiTokenSet: false,
-        deviceSaved: false,
-        deviceError: '',
 
         /* System update */
         updateStatus: {
@@ -1163,18 +1077,6 @@
               this.config.local_caster_enabled = data.local_caster_enabled === true || data.local_caster_enabled === 'true';
               this.config.local_caster_port = data.local_caster_port || '2101';
               this.config.local_caster_mountpoint = data.local_caster_mountpoint || 'SURVEY365';
-              this.deviceConfig.original_imei = data.original_imei || '';
-              this.deviceConfig.generated_imei = data.generated_imei || '';
-              this.deviceConfig.generated_model = data.generated_model || '';
-              this.deviceConfig.generated_date = data.generated_date || '';
-              this.deviceConfig.imei_max_retries = data.imei_max_retries || '5';
-              this.deviceConfig.imei_models = data.imei_models || '';
-              this.deviceConfig.check_lost_device = data.check_lost_device === true || data.check_lost_device === 'true';
-              this.deviceConfig.check_verizon = data.check_verizon === true || data.check_verizon === 'true';
-              this.deviceConfig.check_tmobile = data.check_tmobile === true || data.check_tmobile === 'true';
-              this.deviceConfig.check_blacklist = data.check_blacklist === true || data.check_blacklist === 'true';
-              this.imeiApiTokenSet = data.imei_api_token_set === true;
-              this.imeiApiTokenInput = '';
             }
           } catch (_) {}
         },
@@ -1218,47 +1120,6 @@
             }
           } catch (err) {
             this.configError = 'Network error: ' + err.message;
-          }
-        },
-
-        async saveDeviceConfig() {
-          this.deviceSaved = false;
-          this.deviceError = '';
-
-          var body = {
-            original_imei: this.deviceConfig.original_imei,
-            generated_imei: this.deviceConfig.generated_imei,
-            generated_model: this.deviceConfig.generated_model,
-            generated_date: this.deviceConfig.generated_date,
-            imei_max_retries: String(this.deviceConfig.imei_max_retries || ''),
-            imei_models: this.deviceConfig.imei_models,
-            check_lost_device: this.deviceConfig.check_lost_device ? 'true' : 'false',
-            check_verizon: this.deviceConfig.check_verizon ? 'true' : 'false',
-            check_tmobile: this.deviceConfig.check_tmobile ? 'true' : 'false',
-            check_blacklist: this.deviceConfig.check_blacklist ? 'true' : 'false'
-          };
-          if (this.imeiApiTokenInput) body.imei_api_token = this.imeiApiTokenInput;
-
-          try {
-            var res = await fetch('/api/config', {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body)
-            });
-
-            if (res.ok) {
-              this.deviceSaved = true;
-              if (this.imeiApiTokenInput) this.imeiApiTokenSet = true;
-              this.imeiApiTokenInput = '';
-              var self = this;
-              setTimeout(function () { self.deviceSaved = false; }, 3000);
-            } else {
-              var err = {};
-              try { err = await res.json(); } catch (_) {}
-              this.deviceError = err.detail || err.error || 'Failed to save device settings.';
-            }
-          } catch (err) {
-            this.deviceError = 'Network error: ' + err.message;
           }
         },
 

@@ -81,28 +81,11 @@ Wi-Fi networks:
 - applied with `POST /api/wifi/apply` or `sudo bash scripts/setup-wifi.sh`
 - passwords are write-only in the UI/API
 
-Modem / IMEI settings:
-
-- stored in `config`
-- editable in the admin UI
-- includes:
-  - `original_imei`
-  - `generated_imei`
-  - `generated_model`
-  - `generated_date`
-  - `imei_api_token`
-  - `imei_max_retries`
-  - `imei_models`
-  - `check_lost_device`
-  - `check_verizon`
-  - `check_tmobile`
-  - `check_blacklist`
-
 Legacy migration behavior:
 
 - `scripts/setup-pi.sh` will import settings from a legacy `base-station/station.conf` if present.
 - If the file is gone from the worktree, the installer can recover the most recent committed copy from Git history and import from that.
-- Existing DB values win; the importer only fills empty settings.
+- Existing DB values win; the importer only fills empty Wi-Fi settings.
 
 ## Managed Infrastructure
 

@@ -196,21 +196,6 @@ db_path = Path(os.environ['SURVEY365_DB'])
 if not station_conf.exists():
     raise SystemExit(0)
 
-config_map = {
-    'ORIGINAL_IMEI': 'original_imei',
-    'GENERATED_IMEI': 'generated_imei',
-    'GENERATED_MODEL': 'generated_model',
-    'GENERATED_DATE': 'generated_date',
-    'IMEI_API_TOKEN': 'imei_api_token',
-    'IMEI_MAX_RETRIES': 'imei_max_retries',
-    'IMEI_MODELS': 'imei_models',
-    'CHECK_LOST_DEVICE': 'check_lost_device',
-    'CHECK_VERIZON': 'check_verizon',
-    'CHECK_TMOBILE': 'check_tmobile',
-    'CHECK_BLACKLIST': 'check_blacklist',
-}
-
-parsed_config = {}
 wifi_rows = []
 for raw_line in station_conf.read_text().splitlines():
     line = raw_line.strip()
@@ -229,9 +214,6 @@ for raw_line in station_conf.read_text().splitlines():
         except ValueError:
             continue
         continue
-    mapped = config_map.get(key)
-    if mapped is not None and value != '':
-        parsed_config[mapped] = value
 
 conn = sqlite3.connect(db_path)
 try:
@@ -251,25 +233,8 @@ try:
             )
             imported_wifi += conn.total_changes - before
 
-    imported_config = 0
-    for key, value in parsed_config.items():
-        cursor = conn.execute('SELECT value FROM config WHERE key = ?', (key,))
-        row = cursor.fetchone()
-        current = row[0] if row else None
-        if current not in (None, ''):
-            continue
-        conn.execute(
-            '''
-            INSERT INTO config (key, value, updated_at)
-            VALUES (?, ?, datetime('now'))
-            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-            ''',
-            (key, value),
-        )
-        imported_config += 1
-
     conn.commit()
-    print(f'imported_wifi={imported_wifi} imported_config={imported_config}')
+    print(f'imported_wifi={imported_wifi}')
 finally:
     conn.close()
 PY
