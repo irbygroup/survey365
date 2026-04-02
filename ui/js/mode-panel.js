@@ -90,6 +90,8 @@ function survey365App() {
      * WebSocket
      * --------------------------------------------------------------- */
     wsConnected: false,
+    backendReachable: true,
+    backendFailureSeconds: 0,
 
     /* ---------------------------------------------------------------
      * Sites
@@ -229,6 +231,9 @@ function survey365App() {
       });
       document.addEventListener('s365:ws-connection', function (e) {
         self.wsConnected = e.detail.connected;
+      });
+      document.addEventListener('s365:backend-state', function (e) {
+        self._onBackendState(e.detail);
       });
       document.addEventListener('s365:map-ready', function () {
         self.mapReady = true;
@@ -513,6 +518,28 @@ function survey365App() {
         var displayMode = this.establishing ? 'establishing' : this.mode;
         S365MapCore.updateBaseMarker(msg.gnss.latitude, msg.gnss.longitude, displayMode);
         S365MapCore.updateAccuracyCircle(msg.gnss.latitude, msg.gnss.longitude, msg.gnss.accuracy_h);
+      }
+    },
+
+    _onBackendState(detail) {
+      var wasDown = !this.backendReachable;
+
+      this.backendReachable = !!(detail && detail.reachable);
+      this.backendFailureSeconds = detail && !detail.reachable
+        ? (detail.duration_seconds || 0)
+        : 0;
+
+      if (!wasDown && !this.backendReachable) {
+        this.menuOpen = false;
+        this.showModePanel = false;
+        this.showStatusDetail = false;
+      }
+
+      if (wasDown && this.backendReachable) {
+        this._fetchInitialStatus();
+        if (this.showStatusDetail) {
+          this._fetchSatellites();
+        }
       }
     },
 
@@ -882,6 +909,10 @@ function survey365App() {
       setTimeout(function () {
         self.toasts = self.toasts.filter(function (t) { return t.id !== toast.id; });
       }, 4000);
+    },
+
+    get backendReconnectExpired() {
+      return this.backendFailureSeconds >= 180;
     },
 
     /* ---------------------------------------------------------------

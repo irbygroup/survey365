@@ -160,6 +160,81 @@
   margin-top: 12px;
 }
 
+/* --- Backend outage overlay --- */
+.s365-backend-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  transition: background 0.25s ease;
+}
+
+.s365-backend-overlay.retrying {
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: grayscale(0.7) blur(4px);
+  -webkit-backdrop-filter: grayscale(0.7) blur(4px);
+}
+
+.s365-backend-overlay.hard-fail {
+  background: rgba(2, 6, 23, 0.88);
+  backdrop-filter: grayscale(1) blur(8px);
+  -webkit-backdrop-filter: grayscale(1) blur(8px);
+}
+
+.s365-backend-card {
+  width: min(420px, 100%);
+  background: rgba(255, 255, 255, 0.96);
+  color: #0f172a;
+  border-radius: 20px;
+  padding: 28px 24px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  text-align: center;
+}
+
+.s365-backend-overlay.hard-fail .s365-backend-card {
+  background: rgba(15, 23, 42, 0.96);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.s365-backend-eyebrow {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.s365-backend-overlay.hard-fail .s365-backend-eyebrow {
+  color: #cbd5e1;
+}
+
+.s365-backend-card h2 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+}
+
+.s365-backend-card p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.s365-backend-timer {
+  margin-top: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.s365-backend-overlay.hard-fail .s365-backend-timer {
+  color: #e2e8f0;
+}
+
 /* --- Project Tag (top bar) --- */
 .s365-project-tag {
   height: 36px;

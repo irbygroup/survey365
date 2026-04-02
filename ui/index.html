@@ -22,6 +22,28 @@
 </head>
 <body x-data="survey365App()" x-init="init()" x-cloak>
 
+  <div class="s365-backend-overlay"
+       x-show="!backendReachable"
+       :class="backendReconnectExpired ? 'hard-fail' : 'retrying'"
+       x-transition.opacity>
+    <div class="s365-backend-card">
+      <div class="s365-backend-eyebrow" x-text="backendReconnectExpired ? 'Backend Offline' : 'Connection Lost'"></div>
+      <h2 x-text="backendReconnectExpired ? 'Unable to reconnect' : 'Reconnecting'"></h2>
+      <p x-show="!backendReconnectExpired">
+        Survey365 lost contact with the base. Trying to reconnect now.
+      </p>
+      <p x-show="backendReconnectExpired">
+        Survey365 could not reach the backend for 3 minutes. Check power, network, or restart the base.
+      </p>
+      <div class="s365-backend-timer" x-show="!backendReconnectExpired">
+        Retrying for <strong x-text="backendFailureSeconds"></strong>s / 180s
+      </div>
+      <div class="s365-backend-timer" x-show="backendReconnectExpired">
+        Still retrying in the background.
+      </div>
+    </div>
+  </div>
+
   <!-- ============================================================
        Project Gate -- Full-screen overlay until project is chosen
        ============================================================ -->

@@ -7,8 +7,9 @@
 # What this does:
 #   1. Checks origin/main for updates without mutating the repository in --auto mode
 #   2. Applies app updates only when run without --auto
-#   3. Optionally upgrades Debian packages and reboots when --os-upgrade is requested
+#   3. Optionally upgrades Debian packages
 #   4. Re-runs scripts/setup-pi.sh so deployment logic stays single-sourced
+#   5. Reboots back into the Pi's normal operating mode after a successful apply
 
 set -euo pipefail
 PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -199,6 +200,7 @@ if grep -q '^# BEGIN survey365-resilient$' /etc/fstab 2>/dev/null; then
     INSTALL_ARGS+=(--resilient)
 fi
 
+info "Re-running scripts/setup-pi.sh to deploy the updated system state..."
 if [[ "$OS_UPGRADE" == "true" ]]; then
     info "Updating Debian packages..."
     sudo apt-get update
@@ -209,7 +211,6 @@ if [[ "$OS_UPGRADE" == "true" ]]; then
     ok "Debian packages upgraded"
 fi
 
-info "Re-running scripts/setup-pi.sh to deploy the updated system state..."
 sudo "$REPO_DIR/scripts/setup-pi.sh" "${INSTALL_ARGS[@]}"
 
 sleep 2
@@ -235,8 +236,7 @@ echo -e "  ${BLUE}Message:${NC} $(git -C "$REPO_DIR" log -1 --format='%s' HEAD)"
 echo -e "  ${BLUE}Status:${NC}  $(sudo systemctl is-active survey365)"
 echo ""
 
-if [[ "$OS_UPGRADE" == "true" ]]; then
-    warn "Rebooting to complete OS package updates..."
-    REBOOT_REQUESTED=true
-    sudo systemctl reboot
-fi
+warn "Rebooting to return the Pi to normal operating mode..."
+REBOOT_REQUESTED=true
+sudo sync
+exec sudo systemctl reboot

@@ -484,6 +484,7 @@ RESILIENT_MODE=false
 DATA_ROOT=""
 DATA_DEVICE=""
 LEGACY_STATION_CONF=""
+REBOOT_AFTER=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -492,6 +493,7 @@ for arg in "$@"; do
         --data-device=*) DATA_DEVICE="${arg#--data-device=}" ;;
         --legacy-station-conf=*) LEGACY_STATION_CONF="${arg#--legacy-station-conf=}" ;;
         --resilient) RESILIENT_MODE=true ;;
+        --reboot) REBOOT_AFTER=true ;;
         *) die "Unknown argument: $arg" ;;
     esac
 done
@@ -858,8 +860,17 @@ echo "    journalctl -u survey365-boot"
 echo "    journalctl -u survey365-update -f"
 echo ""
 
-if [[ "$REBOOT_REQUIRED" == "true" ]]; then
-    warn "Reboot required before resilient-mode filesystem settings take effect"
+if [[ "$REBOOT_REQUIRED" == "true" || "$REBOOT_AFTER" == "true" ]]; then
+    if [[ -n "$GENERATED_LEGACY_CONF" ]]; then
+        rm -f "$GENERATED_LEGACY_CONF"
+    fi
+    if [[ "$REBOOT_REQUIRED" == "true" ]]; then
+        warn "Reboot required before resilient-mode filesystem settings take effect"
+    else
+        warn "Rebooting to return the Pi to normal operating mode"
+    fi
+    sync
+    exec systemctl reboot
 fi
 
 if [[ -n "$GENERATED_LEGACY_CONF" ]]; then
