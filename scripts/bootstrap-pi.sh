@@ -5,13 +5,14 @@
 # What this does:
 #   1. Configures the fan (GPIO 14, 60 °C trigger)
 #   2. Fixes locale (en_US.UTF-8)
-#   3. Runs a full OS upgrade
-#   4. Installs prerequisite packages (git, gh, minicom, python3-serial)
-#   5. Installs and configures Tailscale
-#   6. Adds SSH authorized keys for workstations
-#   7. Clones the Survey365 repository
-#   8. Runs the Survey365 installer
-#   9. Applies any database-backed Wi-Fi profiles
+#   3. Prompts for and sets the Pi hostname
+#   4. Runs a full OS upgrade
+#   5. Installs prerequisite packages (git, gh, minicom, python3-serial)
+#   6. Installs and configures Tailscale
+#   7. Adds SSH authorized keys for workstations
+#   8. Clones the Survey365 repository
+#   9. Runs the Survey365 installer
+#  10. Applies any database-backed Wi-Fi profiles
 #
 # Usage:
 #   sudo bash scripts/bootstrap-pi.sh \
@@ -36,6 +37,44 @@ ok()    { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die()   { err "$*"; exit 1; }
+
+prompt_hostname() {
+    local default_host answer
+    default_host=$(hostnamectl --static 2>/dev/null || hostname)
+    if [[ -z "$TS_HOSTNAME" ]]; then
+        if [[ -t 0 ]]; then
+            read -r -p "Pi hostname [$default_host]: " answer
+            TS_HOSTNAME="${answer:-$default_host}"
+        else
+            TS_HOSTNAME="$default_host"
+            warn "No --ts-hostname provided; using current hostname '$TS_HOSTNAME'"
+        fi
+    fi
+
+    TS_HOSTNAME=$(printf '%s' "$TS_HOSTNAME" | tr '[:upper:]' '[:lower:]')
+    if [[ ! "$TS_HOSTNAME" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+        die "Invalid hostname '$TS_HOSTNAME'. Use lowercase letters, numbers, and hyphens only."
+    fi
+}
+
+configure_hostname() {
+    local current_host
+    current_host=$(hostnamectl --static 2>/dev/null || hostname)
+
+    info "Configuring hostname..."
+    if [[ "$current_host" == "$TS_HOSTNAME" ]]; then
+        ok "Hostname already set to $TS_HOSTNAME"
+    else
+        hostnamectl set-hostname "$TS_HOSTNAME"
+        ok "Hostname set to $TS_HOSTNAME"
+    fi
+
+    if grep -q '^127\.0\.1\.1 ' /etc/hosts; then
+        sed -i "s/^127\\.0\\.1\\.1 .*/127.0.1.1 $TS_HOSTNAME $TS_HOSTNAME/" /etc/hosts
+    else
+        printf '\n127.0.1.1 %s %s\n' "$TS_HOSTNAME" "$TS_HOSTNAME" >> /etc/hosts
+    fi
+}
 
 # ── Root check ──────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
@@ -77,6 +116,7 @@ TARGET_HOME=$(eval echo "~$TARGET_USER")
 REPO_DIR="$TARGET_HOME/survey365"
 
 info "Target user: $TARGET_USER (home: $TARGET_HOME)"
+prompt_hostname
 
 # ── Step 1: Fan configuration ───────────────────────────────────────────
 info "Checking fan configuration..."
@@ -108,13 +148,16 @@ else
     ok "en_US.UTF-8 locale generated"
 fi
 
-# ── Step 3: OS upgrade ──────────────────────────────────────────────────
+# ── Step 3: Hostname ────────────────────────────────────────────────────
+configure_hostname
+
+# ── Step 4: OS upgrade ──────────────────────────────────────────────────
 info "Running full OS upgrade..."
 apt-get update -qq
 apt-get full-upgrade -y -qq
 ok "OS upgraded"
 
-# ── Step 4: Install prerequisite packages ────────────────────────────────
+# ── Step 5: Install prerequisite packages ────────────────────────────────
 info "Installing prerequisite packages..."
 
 PREREQS=(git gh python3-serial minicom)
@@ -132,7 +175,7 @@ else
     ok "All prerequisites already installed"
 fi
 
-# ── Step 5: Install and configure Tailscale ──────────────────────────────
+# ── Step 6: Install and configure Tailscale ──────────────────────────────
 info "Setting up Tailscale..."
 
 if command -v tailscale &>/dev/null; then
@@ -165,7 +208,7 @@ tailscale set --ssh
 systemctl enable tailscaled
 ok "Tailscale SSH enabled, service set to start on boot"
 
-# ── Step 6: SSH authorized keys ──────────────────────────────────────────
+# ── Step 7: SSH authorized keys ──────────────────────────────────────────
 info "Configuring SSH keys..."
 
 SSH_DIR="$TARGET_HOME/.ssh"
@@ -196,7 +239,7 @@ else
     ok "SSH keys already present"
 fi
 
-# ── Step 7: Clone repository ─────────────────────────────────────────────
+# ── Step 8: Clone repository ─────────────────────────────────────────────
 info "Setting up repository..."
 
 if [[ -d "$REPO_DIR/.git" ]]; then
@@ -214,7 +257,7 @@ else
     ok "Repository cloned to $REPO_DIR"
 fi
 
-# ── Step 8: Survey365 install ─────────────────────────────────────────────
+# ── Step 9: Survey365 install ─────────────────────────────────────────────
 SURVEY365_INSTALL="$REPO_DIR/scripts/setup-pi.sh"
 
 if [[ -f "$SURVEY365_INSTALL" ]]; then
@@ -225,7 +268,7 @@ else
     die "Survey365 setup script not found at $SURVEY365_INSTALL"
 fi
 
-# ── Step 9: Apply WiFi profiles (if any) ────────────────────────────────
+# ── Step 10: Apply WiFi profiles (if any) ────────────────────────────────
 WIFI_SCRIPT="$REPO_DIR/scripts/setup-wifi.sh"
 if [[ -f "$WIFI_SCRIPT" ]]; then
     info "Applying any configured WiFi profiles..."
