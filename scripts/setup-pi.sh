@@ -626,16 +626,12 @@ fi
 chown -R "$TARGET_USER:$TARGET_USER" "$DATA_ROOT"
 ok "Data directories ready at $DATA_ROOT"
 
-if [[ ! -f "$DB_PATH" || ! -s "$DB_PATH" ]]; then
-    sudo -u "$TARGET_USER" bash -c "
-        cd '$SURVEY365_DIR' && \
-        SURVEY365_DB='$DB_PATH' '$VENV_DIR/bin/python3' -c \
-        'from app.db import init_db; import asyncio; asyncio.run(init_db())'
-    "
-    ok "Database initialized at $DB_PATH"
-else
-    ok "Database already exists at $DB_PATH"
-fi
+sudo -u "$TARGET_USER" bash -c "
+    cd '$SURVEY365_DIR' && \
+    SURVEY365_DB='$DB_PATH' '$VENV_DIR/bin/python3' -c \
+    'from app.db import init_db; import asyncio; asyncio.run(init_db())'
+"
+ok "Database initialized/migrated at $DB_PATH"
 
 LEGACY_CONF_PATH="$(resolve_legacy_station_conf || true)"
 if [[ -n "$LEGACY_CONF_PATH" ]]; then
