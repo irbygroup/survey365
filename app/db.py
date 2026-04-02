@@ -2,7 +2,6 @@
 SQLite + SpatiaLite database connection and helpers.
 
 DB file location: configurable via SURVEY365_DB env var.
-Default: /opt/survey365/data/survey365.db
 
 SpatiaLite is loaded as an extension on every connection open.
 WAL mode is enabled for concurrent reads with single writer.
@@ -15,7 +14,10 @@ from pathlib import Path
 
 import aiosqlite
 
-DB_PATH = os.environ.get("SURVEY365_DB", "/opt/survey365/data/survey365.db")
+DB_PATH = os.environ.get(
+    "SURVEY365_DB",
+    str(Path(__file__).resolve().parent.parent / "data" / "survey365.db"),
+)
 MIGRATIONS_DIR = Path(__file__).parent.parent / "migrations"
 
 # SpatiaLite extension name varies by platform
@@ -225,6 +227,25 @@ async def init_db():
         )
         if await cursor.fetchone() is None:
             migration_file = MIGRATIONS_DIR / "006_antenna_height_config.sql"
+            if migration_file.exists():
+                sql = migration_file.read_text()
+                for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+                    try:
+                        await db.execute(stmt)
+                    except Exception:
+                        pass
+
+        # --- Migration 007: Wi-Fi networks + modem/device config keys ---
+        cursor = await db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='wifi_networks'"
+        )
+        wifi_table_missing = await cursor.fetchone() is None
+        cursor = await db.execute(
+            "SELECT value FROM config WHERE key = 'original_imei'"
+        )
+        device_keys_missing = await cursor.fetchone() is None
+        if wifi_table_missing or device_keys_missing:
+            migration_file = MIGRATIONS_DIR / "007_network_device_config.sql"
             if migration_file.exists():
                 sql = migration_file.read_text()
                 for stmt in [s.strip() for s in sql.split(";") if s.strip()]:

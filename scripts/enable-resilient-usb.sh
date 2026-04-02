@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Provision a USB disk for Survey365 resilient mode.
 # Example:
-#   sudo bash survey365/scripts/enable-resilient-usb.sh --device=/dev/sda --user=jaredirby --force --reboot
+#   sudo bash scripts/enable-resilient-usb.sh --device=/dev/sda --user=jaredirby --force --reboot
 
 set -euo pipefail
 PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
@@ -19,7 +19,7 @@ err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die()   { err "$*"; exit 1; }
 
 if [[ $EUID -ne 0 ]]; then
-    die "Run as root: sudo bash survey365/scripts/enable-resilient-usb.sh ..."
+    die "Run as root: sudo bash scripts/enable-resilient-usb.sh ..."
 fi
 
 DEVICE=""

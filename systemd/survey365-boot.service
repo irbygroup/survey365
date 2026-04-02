@@ -1,11 +1,11 @@
-# Managed by survey365/scripts/setup-pi.sh — deployed to /etc/systemd/system/survey365-boot.service
+# Managed by scripts/setup-pi.sh — deployed to /etc/systemd/system/survey365-boot.service
 [Unit]
 Description=Survey365 Boot Tasks (hardware check)
 After=network.target
 
 [Service]
 Type=oneshot
-ExecStart={home}/rtk-surveying/survey365/venv/bin/python3 {home}/rtk-surveying/survey365/app/boot.py
+ExecStart={repo_dir}/venv/bin/python3 {repo_dir}/app/boot.py
 RemainAfterExit=yes
 
 # Environment

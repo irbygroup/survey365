@@ -90,7 +90,7 @@
 
 | # | Item | Cost | URL |
 |---|------|------|-----|
-| 28 | **Survey365** (native base station software) | Free | github.com/irbygroup/rtk-surveying |
+| 28 | **Survey365** (native base station software) | Free | github.com/irbygroup/survey365 |
 | 29 | **Emlid Caster** (cloud NTRIP relay) | Free | caster.emlid.com |
 | 30 | **ALDOT CORS** (Alabama free RTK network) | Free | aldotcors.dot.state.al.us |
 | 31 | **NGS OPUS** (precise base positioning) | Free | opus.ngs.noaa.gov |

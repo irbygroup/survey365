@@ -13,7 +13,7 @@ from ..auth import require_admin
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
-REPO_DIR = Path(__file__).resolve().parents[3]
+REPO_DIR = Path(__file__).resolve().parents[2]
 UPDATE_SERVICE = "survey365-update.service"
 UPDATE_CHECK_TIMER = "survey365-update-check.timer"
 

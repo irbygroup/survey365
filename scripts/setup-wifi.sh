@@ -1,29 +1,61 @@
 #!/usr/bin/env bash
-# setup-wifi.sh — Configure WiFi networks on the Pi from station.conf
+# setup-wifi.sh — Configure WiFi networks on the Pi from the Survey365 database.
 # Assigns each network to both wlan0 (internal, fallback) and wlan1 (Alfa USB, preferred).
 # Safe to re-run: deletes old managed connections before recreating.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONF="$SCRIPT_DIR/station.conf"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+VENV_DIR="$REPO_DIR/venv"
 WLAN0_METRIC_BUMP=550
 PREFIX="rtk-"
-
-if [[ ! -f "$CONF" ]]; then
-  echo "ERROR: $CONF not found"
-  exit 1
-fi
+DB_PATH="${SURVEY365_DB:-}"
 
 if [[ $EUID -ne 0 ]]; then
   echo "ERROR: run as root (sudo $0)"
   exit 1
 fi
 
-# Extract WIFI_ lines from config
+if [[ -z "$DB_PATH" ]]; then
+  DB_PATH=$(systemctl show -p Environment survey365.service 2>/dev/null | sed -n 's/.*SURVEY365_DB=\([^ ]*\).*/\1/p')
+fi
+if [[ -z "$DB_PATH" ]]; then
+  DB_PATH="$REPO_DIR/data/survey365.db"
+fi
+
+if [[ ! -x "$VENV_DIR/bin/python3" ]]; then
+  echo "ERROR: Python virtual environment not found at $VENV_DIR"
+  exit 1
+fi
+
+if ! command -v nmcli >/dev/null 2>&1; then
+  echo "ERROR: nmcli not found"
+  exit 1
+fi
+
 wifi_lines() {
-  grep '^WIFI_[0-9]*=' "$CONF" | sed 's/^WIFI_[0-9]*=//'
+  "$VENV_DIR/bin/python3" - <<PY
+import sqlite3
+from pathlib import Path
+
+db_path = Path(${DB_PATH@Q})
+if not db_path.exists():
+    raise SystemExit(0)
+
+conn = sqlite3.connect(db_path)
+for row in conn.execute(
+    "SELECT ssid, psk, priority, metric FROM wifi_networks ORDER BY priority DESC, id ASC"
+):
+    print("\t".join("" if value is None else str(value) for value in row))
+conn.close()
+PY
 }
+
+if [[ -z "$(wifi_lines)" ]]; then
+  echo "No WiFi networks stored in $DB_PATH"
+  exit 0
+fi
 
 # Delete all previous managed connections
 echo "Cleaning old rtk- connections..."
@@ -33,7 +65,7 @@ nmcli -t -f NAME connection show | { grep "^${PREFIX}" || true; } | while IFS= r
 done
 
 # Read config and create connections
-wifi_lines | while IFS='|' read -r ssid psk priority metric; do
+wifi_lines | while IFS=$'\t' read -r ssid psk priority metric; do
   # Skip empty
   [[ -z "$ssid" ]] && continue
 
@@ -94,8 +126,7 @@ echo ""
 echo "Activating connections..."
 
 # Try to bring up wlan1 on the highest-priority visible network
-activated=false
-wifi_lines | sort -t'|' -k3 -rn | while IFS='|' read -r ssid psk priority metric; do
+wifi_lines | while IFS=$'\t' read -r ssid psk priority metric; do
   [[ -z "$ssid" ]] && continue
   ssid="$(echo "$ssid" | xargs)"
   con_name="${PREFIX}wlan1-${ssid// /-}"

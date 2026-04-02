@@ -1,4 +1,4 @@
-# Managed by survey365/scripts/setup-pi.sh — deployed to /etc/systemd/system/survey365-update.service
+# Managed by scripts/setup-pi.sh — deployed to /etc/systemd/system/survey365-update.service
 [Unit]
 Description=Survey365 Apply Update
 After=network-online.target
@@ -7,8 +7,8 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User={user}
-WorkingDirectory={home}/rtk-surveying
-ExecStart={home}/rtk-surveying/survey365/scripts/update.sh
+WorkingDirectory={repo_dir}
+ExecStart={repo_dir}/scripts/update.sh
 
 # Logging
 StandardOutput=journal

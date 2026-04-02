@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Survey365 Update Script
-# Check mode:  bash ~/rtk-surveying/survey365/scripts/update.sh --auto
-# Apply mode:  bash ~/rtk-surveying/survey365/scripts/update.sh
-# Full maintenance: bash ~/rtk-surveying/survey365/scripts/update.sh --os-upgrade
+# Check mode:  bash ~/survey365/scripts/update.sh --auto
+# Apply mode:  bash ~/survey365/scripts/update.sh
+# Full maintenance: bash ~/survey365/scripts/update.sh --os-upgrade
 #
 # What this does:
 #   1. Checks origin/main for updates without mutating the repository in --auto mode
@@ -38,8 +38,8 @@ done
 
 # ── Locate repository root ─────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SURVEY365_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_DIR="$(cd "$SURVEY365_DIR/.." && pwd)"
+REPO_DIR="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel 2>/dev/null || (cd "$SCRIPT_DIR/.." && pwd))"
+SURVEY365_DIR="$REPO_DIR"
 VENV_DIR="$SURVEY365_DIR/venv"
 ROOT_WAS_RO=false
 SURVEY365_WAS_ACTIVE=false
@@ -178,7 +178,7 @@ else
 fi
 
 REQUIREMENTS_FILE="$SURVEY365_DIR/requirements.txt"
-if [[ "$APP_UPDATE_NEEDED" == "true" ]] && git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- survey365/requirements.txt | grep -q .; then
+if [[ "$APP_UPDATE_NEEDED" == "true" ]] && git -C "$REPO_DIR" diff --name-only "$PREV_COMMIT" "$NEW_COMMIT" -- requirements.txt | grep -q .; then
     info "requirements.txt changed -- reinstalling Python packages..."
     "$VENV_DIR/bin/pip" install --quiet --upgrade pip
     "$VENV_DIR/bin/pip" install --quiet -r "$REQUIREMENTS_FILE"
@@ -188,10 +188,9 @@ else
 fi
 
 RUNNING_USER="$(whoami)"
-RUNNING_HOME="$(eval echo "~$RUNNING_USER")"
 DATA_DB_PATH=$(systemctl show -p Environment survey365.service 2>/dev/null | sed -n 's/.*SURVEY365_DB=\([^ ]*\).*/\1/p')
 if [[ -z "$DATA_DB_PATH" ]]; then
-    DATA_ROOT="$SURVEY365_DIR/data"
+    DATA_ROOT="$REPO_DIR/data"
 else
     DATA_ROOT="$(dirname "$DATA_DB_PATH")"
 fi
@@ -211,7 +210,7 @@ if [[ "$OS_UPGRADE" == "true" ]]; then
 fi
 
 info "Re-running scripts/setup-pi.sh to deploy the updated system state..."
-sudo "$SURVEY365_DIR/scripts/setup-pi.sh" "${INSTALL_ARGS[@]}"
+sudo "$REPO_DIR/scripts/setup-pi.sh" "${INSTALL_ARGS[@]}"
 
 sleep 2
 

@@ -13,6 +13,8 @@ Known config keys and their types:
 - rtcm_messages: RTCM output selection, e.g. "1005(10),1077,1087,1097,1127,1230(10)"
 - rinex_enabled/rinex_rotate_hours/rinex_data_dir: raw logging settings
 - local_caster_enabled/local_caster_port/local_caster_mountpoint: local NTRIP caster
+- original_imei/generated_imei/generated_model/generated_date: modem IMEI metadata
+- imei_api_token/imei_max_retries/imei_models/check_*: modem/IMEI generator settings
 """
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,7 +29,7 @@ router = APIRouter(prefix="/api/config", tags=["config"])
 PUBLIC_KEYS = {"maptiler_key", "default_lat", "default_lon", "default_zoom"}
 
 # Keys that are never returned in API responses
-SECRET_KEYS = {"web_password_hash", "session_secret"}
+SECRET_KEYS = {"web_password_hash", "session_secret", "imei_api_token"}
 
 # All known config keys (rejects unknown keys on write)
 KNOWN_KEYS = {
@@ -47,6 +49,17 @@ KNOWN_KEYS = {
     "local_caster_enabled",
     "local_caster_port",
     "local_caster_mountpoint",
+    "original_imei",
+    "generated_imei",
+    "generated_model",
+    "generated_date",
+    "imei_api_token",
+    "imei_max_retries",
+    "imei_models",
+    "check_lost_device",
+    "check_verizon",
+    "check_tmobile",
+    "check_blacklist",
 }
 
 
@@ -68,6 +81,17 @@ class ConfigUpdate(BaseModel):
     local_caster_enabled: str | None = None
     local_caster_port: str | None = None
     local_caster_mountpoint: str | None = None
+    original_imei: str | None = None
+    generated_imei: str | None = None
+    generated_model: str | None = None
+    generated_date: str | None = None
+    imei_api_token: str | None = None
+    imei_max_retries: str | None = None
+    imei_models: str | None = None
+    check_lost_device: str | None = None
+    check_verizon: str | None = None
+    check_tmobile: str | None = None
+    check_blacklist: str | None = None
 
 
 @router.get("")
@@ -81,6 +105,7 @@ async def get_full_config(_admin=Depends(require_admin)):
     # Add a convenience flag indicating whether a password is set
     pw_hash = all_config.get("web_password_hash", "")
     result["password_set"] = bool(pw_hash)
+    result["imei_api_token_set"] = bool(all_config.get("imei_api_token"))
 
     return result
 

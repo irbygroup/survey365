@@ -281,6 +281,94 @@
         </div>
       </template>
 
+      <!-- ===== Wi-Fi Networks ===== -->
+      <div class="s365-admin-section">
+        <h2>Wi-Fi Networks</h2>
+        <p style="margin:0 0 12px 0; color:#64748b; font-size:14px;">
+          Survey365 stores known Wi-Fi networks in the database and applies them to both adapters.
+          Passwords are write-only and are never shown again after save.
+        </p>
+
+        <div x-show="wifiLoading" style="text-align:center; padding:20px;">
+          <p aria-busy="true">Loading Wi-Fi networks...</p>
+        </div>
+
+        <div x-show="!wifiLoading && wifiNetworks.length === 0" class="s365-empty">
+          <p>No Wi-Fi networks saved yet.</p>
+        </div>
+
+        <table x-show="!wifiLoading && wifiNetworks.length > 0">
+          <thead>
+            <tr>
+              <th>SSID</th>
+              <th>Priority</th>
+              <th>Metric</th>
+              <th>Password</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="network in wifiNetworks" :key="network.id">
+              <tr>
+                <td><strong x-text="network.ssid"></strong></td>
+                <td x-text="network.priority"></td>
+                <td x-text="network.metric"></td>
+                <td x-text="network.password_set ? 'Stored' : 'Missing'"></td>
+                <td>
+                  <div class="admin-actions">
+                    <button @click="editWifi(network)">Edit</button>
+                    <button class="delete" @click="deleteWifi(network)">Delete</button>
+                  </div>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+          <button @click="openAddWifi()"
+                  style="padding:10px 20px; background:var(--s365-blue); color:#fff; border:none; border-radius:8px; font-size:15px; font-weight:600; cursor:pointer;">
+            Add Wi-Fi Network
+          </button>
+          <button type="button" class="secondary" @click="applyWifi()" :disabled="wifiApplyBusy">
+            <span x-text="wifiApplyBusy ? 'Applying...' : 'Apply to Pi'"></span>
+          </button>
+        </div>
+
+        <p x-show="wifiApplySuccess" style="color:var(--s365-green); margin-top:8px; font-size:14px;" x-text="wifiApplySuccess"></p>
+        <p x-show="wifiApplyError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="wifiApplyError"></p>
+      </div>
+
+      <template x-if="showWifiForm">
+        <div class="s365-admin-section">
+          <h2 x-text="editingWifi ? 'Edit Wi-Fi Network' : 'Add Wi-Fi Network'"></h2>
+          <form @submit.prevent="saveWifi()" class="s365-admin-form">
+            <label for="wifi-ssid">SSID</label>
+            <input type="text" id="wifi-ssid" x-model="wifiForm.ssid" required placeholder="Network name">
+
+            <label for="wifi-password" x-text="editingWifi ? 'Password (leave blank to keep current)' : 'Password'"></label>
+            <input type="password" id="wifi-password" x-model="wifiForm.password" :required="!editingWifi" placeholder="Wi-Fi password">
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+              <div>
+                <label for="wifi-priority">Priority</label>
+                <input type="number" id="wifi-priority" x-model="wifiForm.priority" step="1">
+              </div>
+              <div>
+                <label for="wifi-metric">Metric</label>
+                <input type="number" id="wifi-metric" x-model="wifiForm.metric" min="1" step="1">
+              </div>
+            </div>
+
+            <div style="display:flex; gap:8px; margin-top:8px;">
+              <button type="submit" x-text="editingWifi ? 'Update Network' : 'Add Network'"></button>
+              <button type="button" class="secondary" @click="closeWifiForm()">Cancel</button>
+            </div>
+          </form>
+          <p x-show="wifiFormError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="wifiFormError"></p>
+        </div>
+      </template>
+
       <!-- ===== Config Settings ===== -->
       <div class="s365-admin-section">
         <h2>Configuration</h2>
@@ -388,6 +476,74 @@
         </form>
         <p x-show="configSaved" style="color:var(--s365-green); margin-top:8px; font-size:14px;">Configuration saved.</p>
         <p x-show="configError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="configError"></p>
+      </div>
+
+      <!-- ===== Device Settings ===== -->
+      <div class="s365-admin-section">
+        <h2>Device Settings</h2>
+        <form @submit.prevent="saveDeviceConfig()" class="s365-admin-form">
+          <h3 style="margin:0 0 8px 0; color:#0f172a;">IMEI Metadata</h3>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div>
+              <label for="dev-original-imei">Original IMEI</label>
+              <input type="text" id="dev-original-imei" x-model="deviceConfig.original_imei" placeholder="Factory IMEI">
+            </div>
+            <div>
+              <label for="dev-generated-imei">Generated IMEI</label>
+              <input type="text" id="dev-generated-imei" x-model="deviceConfig.generated_imei" placeholder="Assigned IMEI">
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:2fr 1fr; gap:12px;">
+            <div>
+              <label for="dev-generated-model">Generated Model</label>
+              <input type="text" id="dev-generated-model" x-model="deviceConfig.generated_model" placeholder="Device model">
+            </div>
+            <div>
+              <label for="dev-generated-date">Generated Date</label>
+              <input type="text" id="dev-generated-date" x-model="deviceConfig.generated_date" placeholder="YYYY-MM-DD">
+            </div>
+          </div>
+
+          <h3 style="margin:20px 0 8px 0; color:#0f172a;">IMEI Lookup API</h3>
+          <label for="dev-imei-token">API Token</label>
+          <input type="password" id="dev-imei-token" x-model="imeiApiTokenInput" placeholder="Leave blank to keep current token">
+          <p style="margin:6px 0 0 0; color:#64748b; font-size:13px;" x-text="imeiApiTokenSet ? 'A token is stored. Enter a new token only to replace it.' : 'No token is currently stored.'"></p>
+
+          <div style="display:grid; grid-template-columns:1fr 2fr; gap:12px;">
+            <div>
+              <label for="dev-imei-retries">Max Retries</label>
+              <input type="number" id="dev-imei-retries" x-model="deviceConfig.imei_max_retries" min="1" step="1">
+            </div>
+            <div>
+              <label for="dev-imei-models">Allowed Models</label>
+              <input type="text" id="dev-imei-models" x-model="deviceConfig.imei_models" placeholder="Comma-separated or blank">
+            </div>
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+            <label style="display:flex; align-items:center; gap:8px; margin:0;">
+              <input type="checkbox" x-model="deviceConfig.check_lost_device" style="width:auto; height:auto;">
+              Check lost device status
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; margin:0;">
+              <input type="checkbox" x-model="deviceConfig.check_verizon" style="width:auto; height:auto;">
+              Check Verizon
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; margin:0;">
+              <input type="checkbox" x-model="deviceConfig.check_tmobile" style="width:auto; height:auto;">
+              Check T-Mobile
+            </label>
+            <label style="display:flex; align-items:center; gap:8px; margin:0;">
+              <input type="checkbox" x-model="deviceConfig.check_blacklist" style="width:auto; height:auto;">
+              Check blacklist
+            </label>
+          </div>
+
+          <button type="submit">Save Device Settings</button>
+        </form>
+        <p x-show="deviceSaved" style="color:var(--s365-green); margin-top:8px; font-size:14px;">Device settings saved.</p>
+        <p x-show="deviceError" style="color:var(--s365-red); margin-top:8px; font-size:14px;" x-text="deviceError"></p>
       </div>
 
       <!-- ===== System Update ===== -->
@@ -503,6 +659,17 @@
         ntripForm: { name: '', type: 'outbound_caster', host: '', port: '', mountpoint: '', username: '', password: '', is_default: false, notes: '' },
         ntripFormError: '',
 
+        /* Wi-Fi */
+        wifiNetworks: [],
+        wifiLoading: false,
+        showWifiForm: false,
+        editingWifi: null,
+        wifiForm: { ssid: '', password: '', priority: 10, metric: 50 },
+        wifiFormError: '',
+        wifiApplyBusy: false,
+        wifiApplySuccess: '',
+        wifiApplyError: '',
+
         /* Config */
         config: {
           maptiler_key: '',
@@ -524,6 +691,24 @@
         },
         configSaved: false,
         configError: '',
+
+        /* Device settings */
+        deviceConfig: {
+          original_imei: '',
+          generated_imei: '',
+          generated_model: '',
+          generated_date: '',
+          imei_max_retries: '5',
+          imei_models: '',
+          check_lost_device: true,
+          check_verizon: true,
+          check_tmobile: true,
+          check_blacklist: true
+        },
+        imeiApiTokenInput: '',
+        imeiApiTokenSet: false,
+        deviceSaved: false,
+        deviceError: '',
 
         /* System update */
         updateStatus: {
@@ -553,6 +738,7 @@
             await this._loadProjects();
             this._loadSites();
             this._loadNtrip();
+            this._loadWifi();
             this._loadConfig();
             await this.loadUpdateStatus();
             this._scheduleUpdatePoll();
@@ -819,6 +1005,125 @@
 
         /* ======= Config ======= */
 
+        async _loadWifi() {
+          this.wifiLoading = true;
+          try {
+            var res = await fetch('/api/wifi');
+            if (res.ok) {
+              var data = await res.json();
+              this.wifiNetworks = data.networks || [];
+            }
+          } catch (_) {}
+          this.wifiLoading = false;
+        },
+
+        openAddWifi() {
+          this.editingWifi = null;
+          this.wifiForm = { ssid: '', password: '', priority: 10, metric: 50 };
+          this.wifiFormError = '';
+          this.showWifiForm = true;
+        },
+
+        editWifi(network) {
+          this.editingWifi = network;
+          this.wifiForm = {
+            ssid: network.ssid || '',
+            password: '',
+            priority: network.priority != null ? network.priority : 10,
+            metric: network.metric != null ? network.metric : 50
+          };
+          this.wifiFormError = '';
+          this.showWifiForm = true;
+        },
+
+        closeWifiForm() {
+          this.showWifiForm = false;
+          this.editingWifi = null;
+          this.wifiFormError = '';
+        },
+
+        async saveWifi() {
+          this.wifiFormError = '';
+          if (!this.wifiForm.ssid) {
+            this.wifiFormError = 'SSID is required.';
+            return;
+          }
+          if (!this.editingWifi && !this.wifiForm.password) {
+            this.wifiFormError = 'Password is required for new Wi-Fi networks.';
+            return;
+          }
+
+          var body = {
+            ssid: this.wifiForm.ssid.trim(),
+            priority: parseInt(this.wifiForm.priority || 0),
+            metric: parseInt(this.wifiForm.metric || 50)
+          };
+          if (this.wifiForm.password) body.password = this.wifiForm.password;
+
+          try {
+            var url, method;
+            if (this.editingWifi) {
+              url = '/api/wifi/' + this.editingWifi.id;
+              method = 'PUT';
+            } else {
+              url = '/api/wifi';
+              method = 'POST';
+            }
+            var res = await fetch(url, {
+              method: method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+
+            if (res.ok) {
+              this.closeWifiForm();
+              await this._loadWifi();
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              this.wifiFormError = err.detail || err.error || 'Failed to save Wi-Fi network.';
+            }
+          } catch (err) {
+            this.wifiFormError = 'Network error: ' + err.message;
+          }
+        },
+
+        async deleteWifi(network) {
+          if (!confirm('Delete Wi-Fi network "' + network.ssid + '"?')) return;
+          try {
+            var res = await fetch('/api/wifi/' + network.id, { method: 'DELETE' });
+            if (res.ok) {
+              await this._loadWifi();
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              alert(err.detail || err.error || 'Failed to delete Wi-Fi network.');
+            }
+          } catch (err) {
+            alert('Network error: ' + err.message);
+          }
+        },
+
+        async applyWifi() {
+          this.wifiApplyBusy = true;
+          this.wifiApplySuccess = '';
+          this.wifiApplyError = '';
+          try {
+            var res = await fetch('/api/wifi/apply', { method: 'POST' });
+            if (res.ok) {
+              var data = await res.json();
+              this.wifiApplySuccess = data.output || 'Wi-Fi settings applied.';
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              this.wifiApplyError = err.detail || err.error || 'Failed to apply Wi-Fi settings.';
+            }
+          } catch (err) {
+            this.wifiApplyError = 'Network error: ' + err.message;
+          }
+          this.wifiApplyBusy = false;
+        },
+
         async _loadConfig() {
           try {
             var res = await fetch('/api/config');
@@ -840,6 +1145,18 @@
               this.config.local_caster_enabled = data.local_caster_enabled === true || data.local_caster_enabled === 'true';
               this.config.local_caster_port = data.local_caster_port || '2101';
               this.config.local_caster_mountpoint = data.local_caster_mountpoint || 'SURVEY365';
+              this.deviceConfig.original_imei = data.original_imei || '';
+              this.deviceConfig.generated_imei = data.generated_imei || '';
+              this.deviceConfig.generated_model = data.generated_model || '';
+              this.deviceConfig.generated_date = data.generated_date || '';
+              this.deviceConfig.imei_max_retries = data.imei_max_retries || '5';
+              this.deviceConfig.imei_models = data.imei_models || '';
+              this.deviceConfig.check_lost_device = data.check_lost_device === true || data.check_lost_device === 'true';
+              this.deviceConfig.check_verizon = data.check_verizon === true || data.check_verizon === 'true';
+              this.deviceConfig.check_tmobile = data.check_tmobile === true || data.check_tmobile === 'true';
+              this.deviceConfig.check_blacklist = data.check_blacklist === true || data.check_blacklist === 'true';
+              this.imeiApiTokenSet = data.imei_api_token_set === true;
+              this.imeiApiTokenInput = '';
             }
           } catch (_) {}
         },
@@ -883,6 +1200,47 @@
             }
           } catch (err) {
             this.configError = 'Network error: ' + err.message;
+          }
+        },
+
+        async saveDeviceConfig() {
+          this.deviceSaved = false;
+          this.deviceError = '';
+
+          var body = {
+            original_imei: this.deviceConfig.original_imei,
+            generated_imei: this.deviceConfig.generated_imei,
+            generated_model: this.deviceConfig.generated_model,
+            generated_date: this.deviceConfig.generated_date,
+            imei_max_retries: String(this.deviceConfig.imei_max_retries || ''),
+            imei_models: this.deviceConfig.imei_models,
+            check_lost_device: this.deviceConfig.check_lost_device ? 'true' : 'false',
+            check_verizon: this.deviceConfig.check_verizon ? 'true' : 'false',
+            check_tmobile: this.deviceConfig.check_tmobile ? 'true' : 'false',
+            check_blacklist: this.deviceConfig.check_blacklist ? 'true' : 'false'
+          };
+          if (this.imeiApiTokenInput) body.imei_api_token = this.imeiApiTokenInput;
+
+          try {
+            var res = await fetch('/api/config', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+
+            if (res.ok) {
+              this.deviceSaved = true;
+              if (this.imeiApiTokenInput) this.imeiApiTokenSet = true;
+              this.imeiApiTokenInput = '';
+              var self = this;
+              setTimeout(function () { self.deviceSaved = false; }, 3000);
+            } else {
+              var err = {};
+              try { err = await res.json(); } catch (_) {}
+              this.deviceError = err.detail || err.error || 'Failed to save device settings.';
+            }
+          } catch (err) {
+            this.deviceError = 'Network error: ' + err.message;
           }
         },
 

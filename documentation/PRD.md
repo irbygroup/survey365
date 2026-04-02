@@ -474,19 +474,19 @@ hotspot:
 
 ### Features
 
-- View all configured networks (from `base-station/station.conf` `WIFI_n` entries)
+- View all configured networks from the database-backed `wifi_networks` table
 - Add new network: SSID, password, priority, metric
 - Remove network
 - View connection status per adapter (wlan0, wlan1)
 - View signal strength of connected network
 - Scan for available networks
-- Re-run setup-wifi.sh after changes
+- Apply changes from the admin UI or re-run `scripts/setup-wifi.sh`
 
 ### Display
 
 | Field | Source |
 |-------|--------|
-| SSID | station.conf |
+| SSID | `wifi_networks` table |
 | Connected | nmcli device status |
 | Signal | nmcli -f SSID,SIGNAL device wifi list |
 | Interface | wlan0 / wlan1 |
@@ -506,7 +506,7 @@ hotspot:
 | Network type (LTE/3G) | mmcli -m 0 |
 | SIM status | mmcli -i 0 |
 | IMEI (current) | mmcli -m 0 \| grep imei |
-| IMEI (original) | station.conf `ORIGINAL_IMEI` |
+| IMEI (original) | `config.original_imei` |
 | Generate new IMEI | Run imei-generator/generate.py |
 | Set IMEI on modem | AT+SIMEI=xxx via serial |
 | APN settings | mmcli -m 0 --simple-connect |
@@ -896,7 +896,7 @@ CREATE TABLE rovers (
     color           TEXT
 );
 
--- WiFi networks (mirror of station.conf WIFI_n entries)
+-- WiFi networks (managed from the Survey365 database)
 CREATE TABLE wifi_networks (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     ssid            TEXT NOT NULL,
@@ -943,7 +943,7 @@ CREATE TABLE config (
 ## File Structure
 
 ```
-survey365/
+repo-root/
 ├── PRD.md                      # This document
 ├── app/
 │   ├── main.py                 # FastAPI app, registers routes

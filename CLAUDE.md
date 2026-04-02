@@ -1,9 +1,29 @@
-# RTK Surveying
+# Survey365
 
-RTK GNSS base-station system running on a Raspberry Pi 4. The repo has two main areas:
+Survey365 is a Raspberry Pi based RTK GNSS field controller. The repo is now flat: the app, UI, systemd templates, nginx template, migrations, and Pi scripts all live at the repo root.
 
-- `base-station/` — Pi hardware config, Wi-Fi setup, modem notes
-- `survey365/` — FastAPI field app, UI, GNSS control, systemd/nginx templates, install/update scripts
+## Current Layout
+
+```text
+app/
+documentation/
+migrations/
+nginx/
+scripts/
+systemd/
+ui/
+requirements.txt
+CLAUDE.md
+AGENTS.md
+```
+
+Important scripts:
+
+- `scripts/setup-pi.sh`: installs dependencies, deploys nginx/systemd/udev/sudoers, initializes the DB, imports legacy `station.conf` settings, and enables resilient mode.
+- `scripts/update.sh`: checks `origin/main`, fast-forwards the repo, optionally runs `apt-get full-upgrade`, then reruns `scripts/setup-pi.sh`.
+- `scripts/setup-wifi.sh`: reads `wifi_networks` from SQLite and writes managed NetworkManager connections for `wlan0` and `wlan1`.
+- `scripts/enable-resilient-usb.sh`: wipes a USB disk, formats it, mounts it as the data volume, and calls `scripts/setup-pi.sh --resilient`.
+- `scripts/bootstrap-pi.sh`: first-time Pi bootstrap script for a fresh box.
 
 ## Pi Access
 
@@ -13,8 +33,6 @@ RTK GNSS base-station system running on a Raspberry Pi 4. The repo has two main 
 - LAN UI: `http://192.168.1.110`
 - Tailscale IP: `100.68.19.26`
 
-If Tailscale SSH is flaky, use the LAN IP. The web UI is still fronted by `tailscale serve` for remote access.
-
 ## Hardware and OS
 
 - Raspberry Pi 4 Model B, 2 GB RAM
@@ -23,182 +41,150 @@ If Tailscale SSH is flaky, use the LAN IP. The web UI is still fronted by `tails
 - u-blox ZED-F9P on `/dev/ttyGNSS`
 - Waveshare SIM7600G-H on `/dev/ttyUSB2`
 - Alfa AWUS036ACH on `wlan1` plus onboard Wi-Fi on `wlan0`
-- `zram` swap enabled; do not replace it with disk-backed swap
+- `zram` swap stays enabled; do not replace it with disk-backed swap
 
-## Survey365 Overview
+## App Overview
 
-Survey365 is a map-centric field operations controller with native GNSS control.
+Survey365 uses:
 
-- Backend: FastAPI, async Python, SQLite + SpatiaLite
-- Frontend: HTMX, Alpine.js, MapLibre GL JS, Pico.css
-- Reverse proxy: nginx
-- Process manager: systemd
-- GNSS control: direct serial I/O with `pyubx2` and `pyserial`
+- FastAPI backend
+- Alpine.js + HTMX frontend
+- SQLite + SpatiaLite
+- systemd for services
+- nginx for local HTTP
+- direct serial GNSS control with `pyubx2` and `pyserial`
 
-## Survey365 Structure
+Main admin APIs:
 
-```text
-survey365/
-  app/
-    main.py
-    db.py
-    boot.py
-    auth.py
-    gnss/
-      manager.py
-      serial_reader.py
-      state.py
-      ublox.py
-      rtcm_fanout.py
-      base_station.py
-      ntrip_client.py
-      ntrip_push.py
-      ntrip_caster.py
-      rinex_logger.py
-    routes/
-      status.py
-      mode.py
-      sites.py
-      ntrip.py
-      config.py
-      auth.py
-      system.py
-    ws/
-      live.py
-  ui/
-    index.html
-    admin.html
-    login.html
-    js/
-    css/
-  migrations/
-  nginx/
-    survey365.conf
-  systemd/
-    survey365.service
-    survey365-boot.service
-    survey365-update.service
-    survey365-update-check.service
-    survey365-update-check.timer
-  scripts/
-    setup-pi.sh
-    update.sh
-    enable-resilient-usb.sh
-```
-
-## GNSS Architecture
-
-```text
-/dev/ttyGNSS
-    |
-GNSSManager
-    |
-    +-- UBloxBackend
-    +-- GNSSState updates
-    +-- RTCM fan-out
-          +-- RINEX logger
-          +-- outbound NTRIP push
-          +-- local NTRIP caster
-```
-
-Important design points:
-
-- Survey365 owns the receiver directly. There is no separate relay process.
-- GNSS state, mode transitions, and WebSocket clients are all in-process.
-- The frontend prefers WebSocket and falls back to HTTP polling.
-- Tailscale Serve proxies HTTPS, but WebSocket is unreliable there, so polling fallback matters.
-
-## API Notes
-
-Main field routes are unauthenticated:
-
-- `GET /api/status`
-- `GET /api/satellites`
-- `GET /api/mode`
-- `POST /api/mode/known-base`
-- `POST /api/mode/relative-base`
-- `POST /api/mode/stop`
-- `POST /api/mode/resume`
-- `GET /api/sites`
-
-Admin routes require the session cookie:
-
-- `/api/sites` writes
-- `/api/ntrip`
 - `/api/config`
-- `/api/auth/login`
-- `/api/system/*` update and maintenance endpoints
+- `/api/ntrip`
+- `/api/system/*`
+- `/api/wifi`
+
+Main field APIs:
+
+- `/api/status`
+- `/api/mode/*`
+- `/api/sites`
+- `/api/projects`
 
 Default admin password: `survey365`
 
+## Database-backed Device Config
+
+The old `base-station/station.conf` file is gone. Its settings now live in SQLite.
+
+Wi-Fi networks:
+
+- stored in `wifi_networks`
+- managed from the admin UI
+- applied with `POST /api/wifi/apply` or `sudo bash scripts/setup-wifi.sh`
+- passwords are write-only in the UI/API
+
+Modem / IMEI settings:
+
+- stored in `config`
+- editable in the admin UI
+- includes:
+  - `original_imei`
+  - `generated_imei`
+  - `generated_model`
+  - `generated_date`
+  - `imei_api_token`
+  - `imei_max_retries`
+  - `imei_models`
+  - `check_lost_device`
+  - `check_verizon`
+  - `check_tmobile`
+  - `check_blacklist`
+
+Legacy migration behavior:
+
+- `scripts/setup-pi.sh` will import settings from a legacy `base-station/station.conf` if present.
+- If the file is gone from the worktree, the installer can recover the most recent committed copy from Git history and import from that.
+- Existing DB values win; the importer only fills empty settings.
+
 ## Managed Infrastructure
 
-All Pi infrastructure is managed by `survey365/scripts/setup-pi.sh`. Repo files are templates; deployed files on the Pi are generated from them.
+All Pi infrastructure is generated from repo templates by `scripts/setup-pi.sh`.
 
-Managed templates:
+Managed files:
 
-- `survey365/systemd/survey365.service` -> `/etc/systemd/system/survey365.service`
-- `survey365/systemd/survey365-boot.service` -> `/etc/systemd/system/survey365-boot.service`
-- `survey365/systemd/survey365-update.service` -> `/etc/systemd/system/survey365-update.service`
-- `survey365/systemd/survey365-update-check.service` -> `/etc/systemd/system/survey365-update-check.service`
-- `survey365/systemd/survey365-update-check.timer` -> `/etc/systemd/system/survey365-update-check.timer`
-- `survey365/nginx/survey365.conf` -> `/etc/nginx/sites-available/survey365`
+- `systemd/survey365.service` -> `/etc/systemd/system/survey365.service`
+- `systemd/survey365-boot.service` -> `/etc/systemd/system/survey365-boot.service`
+- `systemd/survey365-update.service` -> `/etc/systemd/system/survey365-update.service`
+- `systemd/survey365-update-check.service` -> `/etc/systemd/system/survey365-update-check.service`
+- `systemd/survey365-update-check.timer` -> `/etc/systemd/system/survey365-update-check.timer`
+- `nginx/survey365.conf` -> `/etc/nginx/sites-available/survey365`
 - inline udev rule -> `/etc/udev/rules.d/99-survey365-gnss.rules`
 - inline sudoers policy -> `/etc/sudoers.d/survey365`
 
+Template placeholders:
+
+- `{user}`
+- `{home}`
+- `{repo_dir}`
+- `{data_dir}`
+
 Rules:
 
-- Infrastructure changes should be made in the repo templates, not directly on the Pi.
-- `survey365/scripts/update.sh` re-runs `survey365/scripts/setup-pi.sh`, so deployment logic stays single-sourced.
-- New services, sudoers changes, or resilient-mode changes require rerunning `survey365/scripts/setup-pi.sh`.
-- systemd templates use `{user}` and `{home}` placeholders.
+- Change templates in the repo, not directly on the Pi.
+- Rerun `scripts/setup-pi.sh` after changing systemd, nginx, sudoers, or resilient-mode behavior.
+- `scripts/update.sh` already reruns `scripts/setup-pi.sh`, so deployment stays single-sourced.
 
 ## Core Commands
 
-First-time install:
+Normal install:
 
 ```bash
-cd ~/rtk-surveying
-sudo bash survey365/scripts/setup-pi.sh --user=jaredirby
+cd ~/survey365
+sudo bash scripts/setup-pi.sh --user=jaredirby
 ```
 
-App update:
+Manual app update:
 
 ```bash
-cd ~/rtk-surveying
-bash survey365/scripts/update.sh
+cd ~/survey365
+bash scripts/update.sh
 ```
 
-App update plus Debian package upgrade and reboot:
+Manual app update plus Debian upgrade and reboot:
 
 ```bash
-cd ~/rtk-surveying
-bash survey365/scripts/update.sh --os-upgrade
+cd ~/survey365
+bash scripts/update.sh --os-upgrade
 ```
 
-Enable resilient mode on a USB disk:
+Enable resilient mode on a USB data disk:
 
 ```bash
-cd ~/rtk-surveying
-sudo bash survey365/scripts/enable-resilient-usb.sh --device=/dev/sda --user=jaredirby --force --reboot
+cd ~/survey365
+sudo bash scripts/enable-resilient-usb.sh --device=/dev/sda --user=jaredirby --force --reboot
+```
+
+Apply Wi-Fi profiles from the DB:
+
+```bash
+cd ~/survey365
+sudo bash scripts/setup-wifi.sh
 ```
 
 ## Update Model
 
-Updates are no longer background auto-apply operations.
+Updates are explicit maintenance actions.
 
-- `survey365-update-check.timer` runs daily and only checks whether `origin/main` has a newer commit.
-- The app can surface `update available` and trigger a manual apply.
-- `survey365-update.service` runs `survey365/scripts/update.sh`.
-- `survey365/scripts/update.sh` can:
-  - check for updates in read-only-safe `--auto` mode
+- `survey365-update-check.timer` runs daily and only checks whether `origin/main` is ahead.
+- The admin UI shows update availability.
+- The admin UI triggers `survey365-update.service` only when the user chooses `Update Now`.
+- `scripts/update.sh` can:
+  - perform a read-only-safe check in `--auto` mode
   - fast-forward the repo
   - reinstall Python packages when `requirements.txt` changes
   - optionally run `apt-get full-upgrade`
-  - rerun `survey365/scripts/setup-pi.sh`
-  - reboot after OS upgrades
+  - rerun `scripts/setup-pi.sh`
+  - reboot after OS package updates
 
-During updates on a resilient Pi, the script temporarily remounts `/` read-write and restores read-only mode on exit unless it is rebooting.
+During resilient mode, updates temporarily remount the OS writable, then restore read-only mode unless rebooting.
 
 ## Resilient Mode
 
@@ -208,107 +194,60 @@ What it does:
 
 - mounts `/` read-only during normal operation
 - mounts `/boot/firmware` read-only
-- keeps persistent Survey365 data on a separate writable filesystem, typically `/srv/survey365`
-- moves volatile, write-heavy paths to `tmpfs`
+- keeps app data on a separate writable filesystem, usually `/srv/survey365`
+- keeps volatile write-heavy paths on `tmpfs`
 - keeps `fsck.repair=yes`
 - keeps `zram`
-- disables noisy background package timers
-- preserves update capability by using a short maintenance window
+- disables noisy unattended package timers
+- preserves Tailscale state on the writable data volume
 
-Resilient mode requires a separate mounted filesystem for `--data-root`. The installer will refuse `--resilient` if the path is just a directory on `/`.
+Persistent paths in resilient mode:
 
-### Persistent Paths in Resilient Mode
+- database: `/srv/survey365/survey365.db`
+- logs: `/srv/survey365/logs`
+- RINEX: `/srv/survey365/rinex`
+- Tailscale: `/srv/survey365/tailscale`
+- systemd random seed: `/srv/survey365/systemd/random-seed`
 
-Under the data root, typically `/srv/survey365`:
-
-- `db/` — `survey365.db`, WAL, SHM
-- `rinex/` — raw GNSS logs
-- `tailscale/` — Tailscale state
-- `systemd/random-seed` — persisted random seed
-
-The service uses `SURVEY365_DB` from the systemd environment to point at the persistent database path.
-
-### Volatile Paths in Resilient Mode
-
-The installer configures these as `tmpfs`:
+Volatile paths in resilient mode:
 
 - `/tmp`
 - `/var/tmp`
 - `/var/log`
+- `/var/lib/nginx`
 - `/var/lib/sudo`
 - `/var/lib/chrony`
 
-It also:
+Installer behavior:
 
-- sets journald to `Storage=volatile`
-- bind-mounts persistent Tailscale state into `/var/lib/tailscale`
-- repoints `/etc/resolv.conf` to `/run/NetworkManager/resolv.conf`
-- moves `/var/lib/systemd/random-seed` onto the data filesystem
+- resilient mode requires `--data-root` to be a separate mounted filesystem
+- the installer writes `fstab` entries for the data volume and tmpfs mounts
+- the installer repoints `/etc/resolv.conf` to `/run/NetworkManager/resolv.conf`
+- journald is set to `Storage=volatile`
+- helper commands are installed:
+  - `survey365-root-rw`
+  - `survey365-root-ro`
+  - `survey365-maint-rw`
+  - `survey365-maint-ro`
 
-### Filesystem and Durability Details
-
-- SQLite is configured for `PRAGMA journal_mode=WAL`
-- SQLite is configured for `PRAGMA synchronous=FULL`
-- the writable data filesystem is mounted with normal ext4 semantics, not global `sync`
-- `fsck.repair=yes` remains enabled for recovery after unclean shutdown
-
-### Background Services Disabled in Resilient Mode
-
-The installer disables:
-
-- `apt-daily.timer`
-- `apt-daily-upgrade.timer`
-- `man-db.timer`
-
-This is deliberate. OS updates become explicit maintenance actions.
-
-### Maintenance Helpers
-
-The installer provides:
-
-- `/usr/local/bin/survey365-root-rw`
-- `/usr/local/bin/survey365-root-ro`
-- `/usr/local/bin/survey365-maint-rw`
-- `/usr/local/bin/survey365-maint-ro`
-
-Use the maintenance helpers when you need a manual OS maintenance window outside the normal app update flow.
-
-### USB Provisioning Helper
-
-`survey365/scripts/enable-resilient-usb.sh` will:
-
-- wipe the target USB disk
-- create a GPT with one ext4 partition
-- format it as `survey365-data`
-- mount it at the data root
-- call `survey365/scripts/setup-pi.sh --resilient --data-device=UUID=...`
-- optionally reboot
-
-The script refuses likely system disks and requires `--force`.
-
-## Logging and Verification
-
-Useful commands:
+Maintenance pattern:
 
 ```bash
-journalctl -u survey365 -f
-journalctl -u survey365-update.service -n 50 --no-pager
-journalctl -u survey365-update-check.service -n 50 --no-pager
-systemctl status survey365 nginx tailscaled
-findmnt /
-findmnt /srv/survey365
+sudo /usr/local/bin/survey365-maint-rw
+sudo apt update
+sudo apt full-upgrade
+sudo reboot
 ```
 
-For resilient mode verification after reboot, check:
+## Runtime Notes
 
-- `/` is mounted read-only
-- `/srv/survey365` is mounted from the USB or other dedicated data filesystem
-- `survey365`, `nginx`, and `tailscaled` are active
-- `survey365-update-check.timer` is enabled
+- `survey365.service` uses `ProtectSystem=strict` and only writes to `{data_dir}`.
+- Logging is written beside the active database when `SURVEY365_DB` is set.
+- `scripts/setup-wifi.sh` creates managed `rtk-*` NetworkManager profiles on both adapters.
+- `wlan1` gets the lower metric; `wlan0` gets `metric + 550`.
 
-## Important Notes
+## Development Notes
 
-- Wi-Fi config is in `base-station/station.conf`; apply it with `sudo bash base-station/setup-wifi.sh`.
-- Survey365 enables F9P antenna voltage during startup.
-- GNSS config lives in the Survey365 database.
-- If you are changing infra behavior, update the repo templates first, then redeploy with `survey365/scripts/setup-pi.sh` or `survey365/scripts/update.sh`.
+- Prefer changing root-level paths; the old nested `survey365/` subtree is gone.
+- Any remaining `~/rtk-surveying` reference is stale and should be removed.
+- If you touch install/update behavior, keep bootstrap, update, and resilient-mode flows consistent.

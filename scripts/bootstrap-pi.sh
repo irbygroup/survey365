@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Initial Pi setup for an RTK base station.
+# Initial Pi setup for a Survey365 controller.
 # Run once on a fresh Raspberry Pi OS / Debian trixie install.
 #
 # What this does:
@@ -9,12 +9,12 @@
 #   4. Installs prerequisite packages (git, gh, minicom, python3-serial)
 #   5. Installs and configures Tailscale
 #   6. Adds SSH authorized keys for workstations
-#   7. Clones the rtk-surveying repository
-#   8. Configures WiFi from station.conf
-#   9. Runs the Survey365 installer
+#   7. Clones the Survey365 repository
+#   8. Runs the Survey365 installer
+#   9. Applies any database-backed Wi-Fi profiles
 #
 # Usage:
-#   sudo bash base-station/initial-install.sh \
+#   sudo bash scripts/bootstrap-pi.sh \
 #       --user=jaredirby \
 #       --ts-authkey=tskey-auth-... \
 #       --ts-hostname=rtkbase-pi \
@@ -39,7 +39,7 @@ die()   { err "$*"; exit 1; }
 
 # ── Root check ──────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
-    die "This script must be run as root. Use: sudo bash initial-install.sh ..."
+    die "This script must be run as root. Use: sudo bash scripts/bootstrap-pi.sh ..."
 fi
 
 # ── Parse flags ─────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ if ! id "$TARGET_USER" &>/dev/null; then
 fi
 
 TARGET_HOME=$(eval echo "~$TARGET_USER")
-REPO_DIR="$TARGET_HOME/rtk-surveying"
+REPO_DIR="$TARGET_HOME/survey365"
 
 info "Target user: $TARGET_USER (home: $TARGET_HOME)"
 
@@ -209,24 +209,13 @@ else
     sudo -u "$TARGET_USER" bash -c "
         echo '$GH_TOKEN' | gh auth login --with-token
         cd '$TARGET_HOME'
-        gh repo clone irbygroup/rtk-surveying
+        gh repo clone irbygroup/survey365
     "
     ok "Repository cloned to $REPO_DIR"
 fi
 
-# ── Step 8: WiFi configuration ───────────────────────────────────────────
-WIFI_SCRIPT="$REPO_DIR/base-station/setup-wifi.sh"
-
-if [[ -f "$WIFI_SCRIPT" ]]; then
-    info "Configuring WiFi..."
-    bash "$WIFI_SCRIPT"
-    ok "WiFi configured"
-else
-    warn "WiFi script not found at $WIFI_SCRIPT — skipping"
-fi
-
-# ── Step 9: Survey365 install ─────────────────────────────────────────────
-SURVEY365_INSTALL="$REPO_DIR/survey365/scripts/setup-pi.sh"
+# ── Step 8: Survey365 install ─────────────────────────────────────────────
+SURVEY365_INSTALL="$REPO_DIR/scripts/setup-pi.sh"
 
 if [[ -f "$SURVEY365_INSTALL" ]]; then
     info "Running Survey365 installer..."
@@ -234,6 +223,16 @@ if [[ -f "$SURVEY365_INSTALL" ]]; then
     ok "Survey365 installed"
 else
     die "Survey365 setup script not found at $SURVEY365_INSTALL"
+fi
+
+# ── Step 9: Apply WiFi profiles (if any) ────────────────────────────────
+WIFI_SCRIPT="$REPO_DIR/scripts/setup-wifi.sh"
+if [[ -f "$WIFI_SCRIPT" ]]; then
+    info "Applying any configured WiFi profiles..."
+    bash "$WIFI_SCRIPT"
+    ok "WiFi apply step completed"
+else
+    warn "WiFi script not found at $WIFI_SCRIPT — skipping"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────
@@ -254,5 +253,5 @@ echo ""
 echo -e "  ${BLUE}Next steps:${NC}"
 echo "    1. SSH in via Tailscale: ssh $TARGET_USER@${TS_HOSTNAME:-$TS_IP}"
 echo "    2. Open Survey365: https://${TS_HOSTNAME:-$TS_IP}"
-echo "    3. For resilient mode, re-run install.sh with --resilient"
+echo "    3. For resilient mode, re-run scripts/setup-pi.sh with --resilient"
 echo ""

@@ -26,6 +26,9 @@ warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 die()   { err "$*"; exit 1; }
 
+LEGACY_STATION_CONF=""
+GENERATED_LEGACY_CONF=""
+
 service_state() {
     local state
     state=$(systemctl is-active "$1" 2>/dev/null || true)
@@ -115,6 +118,161 @@ fi
 mount -o remount,ro /
 EOF
     chmod 0755 /usr/local/bin/survey365-maint-ro
+}
+
+resolve_repo_dir() {
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null || (
+        cd "$script_dir/.." && pwd
+    )
+}
+
+resolve_legacy_station_conf() {
+    local candidate
+    local commit
+    local tmp
+    local fallback_tmp=""
+
+    if [[ -n "$LEGACY_STATION_CONF" ]]; then
+        [[ -f "$LEGACY_STATION_CONF" ]] || die "Legacy station.conf not found: $LEGACY_STATION_CONF"
+        echo "$LEGACY_STATION_CONF"
+        return 0
+    fi
+
+    candidate="$REPO_DIR/base-station/station.conf"
+    if [[ -f "$candidate" ]]; then
+        echo "$candidate"
+        return 0
+    fi
+
+    [[ -d "$REPO_DIR/.git" ]] || return 1
+
+    while read -r commit; do
+        [[ -n "$commit" ]] || continue
+        tmp=$(mktemp)
+        if ! git -C "$REPO_DIR" show "$commit:base-station/station.conf" > "$tmp" 2>/dev/null; then
+            rm -f "$tmp"
+            continue
+        fi
+        if grep -q '^ORIGINAL_IMEI=' "$tmp"; then
+            GENERATED_LEGACY_CONF="$tmp"
+            echo "$tmp"
+            return 0
+        fi
+        if [[ -z "$fallback_tmp" ]] && grep -q '^WIFI_[0-9]\+=' "$tmp"; then
+            fallback_tmp="$tmp"
+        else
+            rm -f "$tmp"
+        fi
+    done < <(git -C "$REPO_DIR" log --format=%H -- base-station/station.conf 2>/dev/null)
+
+    if [[ -n "$fallback_tmp" ]]; then
+        GENERATED_LEGACY_CONF="$fallback_tmp"
+        echo "$fallback_tmp"
+        return 0
+    fi
+
+    return 1
+}
+
+import_legacy_station_conf() {
+    local station_conf="$1"
+
+    [[ -f "$station_conf" ]] || return 0
+
+    info "Importing legacy station settings from $station_conf ..."
+    sudo -u "$TARGET_USER" bash -c "
+        cd '$SURVEY365_DIR' && \
+        SURVEY365_DB='$DB_PATH' LEGACY_STATION_CONF='$station_conf' '$VENV_DIR/bin/python3' - <<'PY'
+import os
+import sqlite3
+from pathlib import Path
+
+station_conf = Path(os.environ['LEGACY_STATION_CONF'])
+db_path = Path(os.environ['SURVEY365_DB'])
+
+if not station_conf.exists():
+    raise SystemExit(0)
+
+config_map = {
+    'ORIGINAL_IMEI': 'original_imei',
+    'GENERATED_IMEI': 'generated_imei',
+    'GENERATED_MODEL': 'generated_model',
+    'GENERATED_DATE': 'generated_date',
+    'IMEI_API_TOKEN': 'imei_api_token',
+    'IMEI_MAX_RETRIES': 'imei_max_retries',
+    'IMEI_MODELS': 'imei_models',
+    'CHECK_LOST_DEVICE': 'check_lost_device',
+    'CHECK_VERIZON': 'check_verizon',
+    'CHECK_TMOBILE': 'check_tmobile',
+    'CHECK_BLACKLIST': 'check_blacklist',
+}
+
+parsed_config = {}
+wifi_rows = []
+for raw_line in station_conf.read_text().splitlines():
+    line = raw_line.strip()
+    if not line or line.startswith('#') or '=' not in line:
+        continue
+    key, value = line.split('=', 1)
+    key = key.strip()
+    value = value.strip()
+    if key.startswith('WIFI_'):
+        parts = value.split('|', 3)
+        if len(parts) != 4:
+            continue
+        ssid, password, priority, metric = parts
+        try:
+            wifi_rows.append((ssid.strip(), password, int(priority), int(metric)))
+        except ValueError:
+            continue
+        continue
+    mapped = config_map.get(key)
+    if mapped is not None and value != '':
+        parsed_config[mapped] = value
+
+conn = sqlite3.connect(db_path)
+try:
+    cursor = conn.execute('SELECT COUNT(*) FROM wifi_networks')
+    wifi_count = int(cursor.fetchone()[0] or 0)
+    imported_wifi = 0
+    if wifi_count == 0:
+        for ssid, password, priority, metric in wifi_rows:
+            before = conn.total_changes
+            conn.execute(
+                '''
+                INSERT OR IGNORE INTO wifi_networks
+                    (ssid, psk, priority, metric, created_at, updated_at)
+                VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+                ''',
+                (ssid, password, priority, metric),
+            )
+            imported_wifi += conn.total_changes - before
+
+    imported_config = 0
+    for key, value in parsed_config.items():
+        cursor = conn.execute('SELECT value FROM config WHERE key = ?', (key,))
+        row = cursor.fetchone()
+        current = row[0] if row else None
+        if current not in (None, ''):
+            continue
+        conn.execute(
+            '''
+            INSERT INTO config (key, value, updated_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+            ''',
+            (key, value),
+        )
+        imported_config += 1
+
+    conn.commit()
+    print(f'imported_wifi={imported_wifi} imported_config={imported_config}')
+finally:
+    conn.close()
+PY
+    "
 }
 
 set_config_value() {
@@ -324,12 +482,14 @@ TARGET_USER=""
 RESILIENT_MODE=false
 DATA_ROOT=""
 DATA_DEVICE=""
+LEGACY_STATION_CONF=""
 
 for arg in "$@"; do
     case "$arg" in
         --user=*) TARGET_USER="${arg#--user=}" ;;
         --data-root=*) DATA_ROOT="${arg#--data-root=}" ;;
         --data-device=*) DATA_DEVICE="${arg#--data-device=}" ;;
+        --legacy-station-conf=*) LEGACY_STATION_CONF="${arg#--legacy-station-conf=}" ;;
         --resilient) RESILIENT_MODE=true ;;
         *) die "Unknown argument: $arg" ;;
     esac
@@ -356,8 +516,8 @@ TARGET_HOME=$(eval echo "~$TARGET_USER")
 info "Target user: $TARGET_USER (home: $TARGET_HOME)"
 
 # ── Path constants ──────────────────────────────────────────────────────
-REPO_DIR="$TARGET_HOME/rtk-surveying"
-SURVEY365_DIR="$REPO_DIR/survey365"
+REPO_DIR="$(resolve_repo_dir)"
+SURVEY365_DIR="$REPO_DIR"
 VENV_DIR="$SURVEY365_DIR/venv"
 LEGACY_DATA_DIR="$SURVEY365_DIR/data"
 
@@ -476,6 +636,12 @@ else
     ok "Database already exists at $DB_PATH"
 fi
 
+LEGACY_CONF_PATH="$(resolve_legacy_station_conf || true)"
+if [[ -n "$LEGACY_CONF_PATH" ]]; then
+    import_legacy_station_conf "$LEGACY_CONF_PATH"
+    ok "Legacy station settings imported"
+fi
+
 if [[ "$DATA_ROOT" != "$LEGACY_DATA_DIR" ]]; then
     set_config_value "rinex_data_dir" "$RINEX_DIR"
     ok "RINEX data directory set to $RINEX_DIR"
@@ -570,6 +736,7 @@ deploy_service() {
     sed \
         -e "s|{user}|$TARGET_USER|g" \
         -e "s|{home}|$TARGET_HOME|g" \
+        -e "s|{repo_dir}|$REPO_DIR|g" \
         -e "s|{data_dir}|$DATA_ROOT|g" \
         "$src" > "/etc/systemd/system/$name"
 
@@ -606,8 +773,9 @@ $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-update.servi
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reboot
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/apt-get *
-$TARGET_USER ALL=(ALL) NOPASSWD: $SURVEY365_DIR/scripts/setup-pi.sh
-$TARGET_USER ALL=(ALL) NOPASSWD: $SURVEY365_DIR/scripts/setup-pi.sh *
+$TARGET_USER ALL=(ALL) NOPASSWD: $REPO_DIR/scripts/setup-pi.sh
+$TARGET_USER ALL=(ALL) NOPASSWD: $REPO_DIR/scripts/setup-pi.sh *
+$TARGET_USER ALL=(ALL) NOPASSWD: $REPO_DIR/scripts/setup-wifi.sh
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/local/bin/survey365-root-rw
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/local/bin/survey365-root-ro
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/local/bin/survey365-maint-rw
@@ -615,7 +783,7 @@ $TARGET_USER ALL=(ALL) NOPASSWD: /usr/local/bin/survey365-maint-ro
 # Auto-deploy: update.sh writes systemd units and nginx config
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/rm -f /etc/systemd/system/survey365-update.timer
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/tee /etc/systemd/system/survey365*
-$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/cp $SURVEY365_DIR/nginx/survey365.conf /etc/nginx/sites-available/survey365
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/cp $REPO_DIR/nginx/survey365.conf /etc/nginx/sites-available/survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/sbin/nginx -s reload
 "
@@ -695,4 +863,8 @@ echo ""
 
 if [[ "$REBOOT_REQUIRED" == "true" ]]; then
     warn "Reboot required before resilient-mode filesystem settings take effect"
+fi
+
+if [[ -n "$GENERATED_LEGACY_CONF" ]]; then
+    rm -f "$GENERATED_LEGACY_CONF"
 fi
