@@ -59,7 +59,7 @@
     console.log('[S365] WebSocket unavailable, using HTTP polling');
     _dispatchConnectionState(true);
 
-    _pollTimer = setInterval(function () {
+    function pollOnce() {
       fetch('/api/status')
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -68,7 +68,10 @@
         .catch(function () {
           /* network error - will retry next interval */
         });
-    }, _pollInterval);
+    }
+
+    pollOnce();
+    _pollTimer = setInterval(pollOnce, _pollInterval);
   }
 
   function _stopPolling() {
@@ -166,6 +169,10 @@
    * ------------------------------------------------------------------- */
   function connect() {
     _wsFailCount = 0;
+    if (location.hostname.endsWith('.ts.net')) {
+      _startPolling();
+      return;
+    }
     _connectWs();
   }
 

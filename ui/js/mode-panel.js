@@ -459,6 +459,7 @@ function survey365App() {
           if (data.gnss) {
             this._updateGnss(data.gnss);
           }
+          this._syncEstablishState(data);
           if (data.mode) {
             this.mode = data.mode;
             this.modeLabel = data.mode_label || this._computeModeLabel(data.mode);
@@ -498,6 +499,7 @@ function survey365App() {
       if (msg.gnss) {
         this._updateGnss(msg.gnss);
       }
+      this._syncEstablishState(msg);
       if (msg.mode != null) {
         this.mode = msg.mode;
         this.modeLabel = msg.mode_label || this._computeModeLabel(msg.mode);
@@ -551,6 +553,29 @@ function survey365App() {
         this.establishing = false;
         this.showEstablishPanel = false;
       }
+    },
+
+    _syncEstablishState(msg) {
+      if (!msg) return;
+
+      if (!msg.establishing) {
+        if (this.establishing && msg.mode === 'idle') {
+          this.establishing = false;
+          this.showEstablishPanel = false;
+        }
+        return;
+      }
+
+      var progress = msg.establish_progress || {};
+      this.establishing = true;
+      this.showEstablishPanel = true;
+      this.establishElapsed = progress.elapsed_seconds || 0;
+      this.establishTotal = progress.total_seconds || this.establishTotal || 120;
+      this.establishSamples = progress.samples || 0;
+      this.establishPhase = progress.phase || this.establishPhase || '';
+      this.establishRtkQuality = progress.rtk_quality || this.establishRtkQuality || '';
+      this.establishAccuracy = progress.accuracy_h || 0;
+      this.establishNtripConnected = !!progress.ntrip_connected;
     },
 
     _updateGnss(gnss) {

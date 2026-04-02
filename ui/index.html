@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#0f172a">
   <title>Survey365</title>
@@ -219,7 +218,7 @@
         <span class="s365-detail-sub" x-text="gnss.satellites_used + ' used / ' + gnss.satellites_visible + ' visible'"></span>
       </div>
       <div class="s365-sat-bars" x-show="satellites.length > 0">
-        <template x-for="sat in satellites.filter(s => s.cn0 > 0).sort((a,b) => b.cn0 - a.cn0)" :key="sat.constellation + sat.svid">
+        <template x-for="(sat, idx) in satellites.filter(s => s.cn0 > 0).sort((a,b) => b.cn0 - a.cn0)" :key="sat.constellation + '-' + sat.svid + '-' + idx">
           <div class="s365-sat-bar-wrap">
             <div class="s365-sat-bar"
                  :style="'height:' + Math.max(4, sat.cn0 * 1.8) + 'px'"

@@ -36,6 +36,8 @@ async def build_status_payload() -> dict:
         "mode": mode_state["mode"],
         "mode_label": mode_state["mode_label"],
         "site": mode_state["site"],
+        "establishing": mode_state["establishing"],
+        "establish_progress": mode_state["establish_progress"],
         "gnss": gnss,
         "services": get_services_snapshot(),
         "uptime_seconds": round(time.time() - _start_time, 0),
