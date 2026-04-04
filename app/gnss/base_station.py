@@ -136,7 +136,7 @@ async def _start_base_rtklib(
                 "messages": rtklib_local_messages,
                 "internal_port": LOCAL_CASTER_INTERNAL_PORT,
                 "receiver_frequency_count": "2",
-                "receiver_label": "RTKBase_ZED-F9P,Survey365",
+                "receiver_label": manager.receiver_descriptor().replace(" ", "_"),
                 "username": "",
                 "password": "",
             },

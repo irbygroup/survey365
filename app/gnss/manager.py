@@ -15,7 +15,7 @@ from .rtcm_fanout import RTCMFanout
 from .rtcm import build_rtcm_1006, parse_rtcm_message_type
 from .serial_reader import SerialReader
 from .state import GNSSState
-from .ublox import UBloxBackend
+from .ublox import UBX_MON_CLASS, UBX_MON_VER_ID, UBloxBackend
 
 logger = logging.getLogger("survey365.gnss.manager")
 
@@ -214,6 +214,13 @@ class GNSSManager:
         except Exception as exc:
             logger.warning("Antenna voltage config failed (may already be set): %s", exc)
 
+        # Poll receiver identity (MON-VER) once at startup
+        try:
+            if hasattr(self.backend, "poll_mon_ver"):
+                await self.backend.poll_mon_ver(self.serial_reader)
+        except Exception as exc:
+            logger.warning("MON-VER poll failed: %s", exc)
+
         try:
             async for frame_type, frame_data in self.serial_reader.frames():
                 if frame_type == "ubx":
@@ -283,7 +290,9 @@ class GNSSManager:
         )
 
     def receiver_descriptor(self) -> str:
-        return f"RTKBase {self.backend.receiver_model},Survey365 {self.backend.receiver_firmware}"
+        """RTKBase-style descriptor: RTKBase {model},{version} {firmware}."""
+        from ..version import __version__
+        return f"RTKBase {self.backend.receiver_model},{__version__} {self.backend.receiver_firmware}"
 
     def _handle_raw_chunk(self, data: bytes) -> None:
         loop = self.serial_reader._loop
@@ -300,11 +309,32 @@ class GNSSManager:
             return False
         msg_class = data[2]
         msg_id = data[3]
-        return msg_class == 0x01 and msg_id in {0x07, 0x35}
+        # NAV-PVT and NAV-SAT always queued
+        if msg_class == 0x01 and msg_id in {0x07, 0x35}:
+            return True
+        # MON-VER response queued while poll is pending
+        if (
+            msg_class == UBX_MON_CLASS
+            and msg_id == UBX_MON_VER_ID
+            and isinstance(self.backend, UBloxBackend)
+            and self.backend._mon_ver_pending
+        ):
+            return True
+        return False
 
-    @staticmethod
-    def _should_process_ubx_message(msg_class: int, msg_id: int) -> bool:
-        return msg_class == 0x01 and msg_id in {0x07, 0x35}
+    def _should_process_ubx_message(self, msg_class: int, msg_id: int) -> bool:
+        # Always allow NAV-PVT and NAV-SAT
+        if msg_class == 0x01 and msg_id in {0x07, 0x35}:
+            return True
+        # Allow MON-VER response through while a poll is pending
+        if (
+            msg_class == UBX_MON_CLASS
+            and msg_id == UBX_MON_VER_ID
+            and isinstance(self.backend, UBloxBackend)
+            and self.backend._mon_ver_pending
+        ):
+            return True
+        return False
 
 
 # Module-level singleton

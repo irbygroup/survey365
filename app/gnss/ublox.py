@@ -24,6 +24,8 @@ UBX_CFG_MSG_ID = 0x01
 UBX_RXM_CLASS = 0x02
 UBX_RXM_RAWX_ID = 0x15
 UBX_RXM_SFRBX_ID = 0x13
+UBX_MON_CLASS = 0x0A
+UBX_MON_VER_ID = 0x04
 
 # CFG-VALSET layer masks
 LAYER_RAM = 0x01
@@ -263,11 +265,49 @@ def parse_rtcm_message_spec(message_spec: str | None) -> dict[int, int]:
     return rates or dict(DEFAULT_RTCM_RATES)
 
 
+def parse_mon_ver(payload: bytes) -> dict | None:
+    """Parse UBX-MON-VER payload.
+
+    Payload layout:
+        bytes 0-29:   software version (30-byte null-terminated string)
+        bytes 30-39:  hardware version (10-byte null-terminated string)
+        bytes 40+:    repeated 30-byte extension strings
+    """
+    if len(payload) < 40:
+        return None
+
+    sw_version = payload[0:30].split(b"\x00", 1)[0].decode("ascii", errors="replace").strip()
+    hw_version = payload[30:40].split(b"\x00", 1)[0].decode("ascii", errors="replace").strip()
+
+    extensions: list[str] = []
+    offset = 40
+    while offset + 30 <= len(payload):
+        ext = payload[offset:offset + 30].split(b"\x00", 1)[0].decode("ascii", errors="replace").strip()
+        if ext:
+            extensions.append(ext)
+        offset += 30
+
+    # Extract model from extensions (e.g. "MOD=ZED-F9P")
+    model = None
+    for ext in extensions:
+        if ext.startswith("MOD="):
+            model = ext[4:].strip()
+            break
+
+    return {
+        "sw_version": sw_version,
+        "hw_version": hw_version,
+        "extensions": extensions,
+        "model": model,
+    }
+
+
 class UBloxBackend:
     """u-blox ZED-F9P backend: parse UBX frames and send configuration commands."""
 
     receiver_model: str = "ZED-F9P"
     receiver_firmware: str = "unknown"
+    _mon_ver_pending: bool = False
 
     async def parse_frame(self, frame: bytes, state) -> None:
         """Parse a UBX frame and update GNSSState."""
@@ -278,6 +318,21 @@ class UBloxBackend:
         msg_id = frame[3]
         payload_len = struct.unpack_from("<H", frame, 4)[0]
         payload = frame[6:6 + payload_len]
+
+        if msg_class == UBX_MON_CLASS and msg_id == UBX_MON_VER_ID:
+            result = parse_mon_ver(payload)
+            if result is not None:
+                if result["model"]:
+                    self.receiver_model = result["model"]
+                self.receiver_firmware = result["sw_version"] or "unknown"
+                self._mon_ver_pending = False
+                logger.info(
+                    "MON-VER: model=%s firmware=%s hw=%s",
+                    self.receiver_model,
+                    self.receiver_firmware,
+                    result["hw_version"],
+                )
+            return
 
         if msg_class != UBX_NAV_CLASS:
             return
@@ -389,6 +444,14 @@ class UBloxBackend:
             await serial_reader.write(_build_cfg_msg(msg_class, msg_id, usb_rate=0))
             await asyncio.sleep(0.1)
         logger.info("Disabled raw UBX measurement output")
+
+    async def poll_mon_ver(self, serial_reader):
+        """Send a zero-payload MON-VER poll; response arrives via parse_frame."""
+        msg = _ubx_message(UBX_MON_CLASS, UBX_MON_VER_ID)
+        self._mon_ver_pending = True
+        await serial_reader.write(msg)
+        logger.info("Sent MON-VER poll")
+        await asyncio.sleep(0.5)
 
     async def enable_antenna_voltage(self, serial_reader):
         """Enable antenna voltage, short detection, and open detection.
