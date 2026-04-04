@@ -26,7 +26,12 @@ StandardError=journal
 SyslogIdentifier=survey365
 
 # Security hardening
-# Survey365 needs sudo -n systemctl access to manage RTKLIB child units.
+# NoNewPrivileges is intentionally NOT set on the main service.
+# survey365.service uses `sudo -n systemctl start/stop/reset-failed` to manage
+# RTKLIB child units.  NoNewPrivileges=true prevents sudo from gaining the
+# needed privileges.  This was verified on the Pi — enabling it breaks child
+# unit control.  The RTKLIB child services *do* set NoNewPrivileges=true
+# because they have no need for privilege escalation.
 ProtectSystem=strict
 ReadWritePaths={data_dir}
 PrivateTmp=true
