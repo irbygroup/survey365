@@ -26,7 +26,7 @@ StandardError=journal
 SyslogIdentifier=survey365
 
 # Security hardening
-NoNewPrivileges=true
+# Survey365 needs sudo -n systemctl access to manage RTKLIB child units.
 ProtectSystem=strict
 ReadWritePaths={data_dir}
 PrivateTmp=true

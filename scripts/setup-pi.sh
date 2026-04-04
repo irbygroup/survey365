@@ -91,6 +91,30 @@ replace_managed_block() {
     rm -f "$tmp" "$block_file"
 }
 
+install_rtklib() {
+    local version="v2.5.0"
+    local archive_url="https://github.com/rtklibexplorer/RTKLIB/archive/refs/tags/${version}.tar.gz"
+    local tmpdir
+    local srcdir
+    local current_version
+
+    current_version="$(/usr/local/bin/str2str --version 2>/dev/null || true)"
+    if [[ -x /usr/local/bin/str2str ]] && [[ "$current_version" == *"2.5.0"* ]]; then
+        ok "RTKLIB str2str already installed"
+        return 0
+    fi
+
+    info "Building RTKLIB str2str from pinned source (${version})..."
+    mkdir -p "$DATA_ROOT"
+    tmpdir="$(mktemp -d "$DATA_ROOT/.rtklib-build.XXXXXX")"
+    srcdir="$tmpdir/RTKLIB-2.5.0"
+    curl -fsSL "$archive_url" | tar -xz -C "$tmpdir"
+    make --directory="$srcdir/app/consapp/str2str/gcc"
+    make --directory="$srcdir/app/consapp/str2str/gcc" install
+    rm -rf "$tmpdir"
+    ok "Installed /usr/local/bin/str2str"
+}
+
 ensure_helper_scripts() {
     cat > /usr/local/bin/survey365-root-rw <<'EOF'
 #!/usr/bin/env bash
@@ -551,6 +575,8 @@ info "Installing system dependencies..."
 apt-get update -qq
 
 DEPS=(
+    build-essential
+    curl
     python3-venv
     python3-dev
     libsqlite3-mod-spatialite
@@ -596,6 +622,8 @@ info "Installing Python packages..."
 sudo -u "$TARGET_USER" "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 sudo -u "$TARGET_USER" "$VENV_DIR/bin/pip" install --quiet -r "$SURVEY365_DIR/requirements.txt"
 ok "Python packages installed"
+
+install_rtklib
 
 # ── Step 4: Data directory and database ─────────────────────────────────
 info "Preparing persistent data..."
@@ -733,6 +761,9 @@ deploy_service "$SURVEY365_DIR/systemd/survey365-boot.service" "survey365-boot.s
 deploy_service "$SURVEY365_DIR/systemd/survey365-update.service" "survey365-update.service"
 deploy_service "$SURVEY365_DIR/systemd/survey365-update-check.service" "survey365-update-check.service"
 deploy_service "$SURVEY365_DIR/systemd/survey365-update-check.timer" "survey365-update-check.timer"
+deploy_service "$SURVEY365_DIR/systemd/survey365-rtklib-local-caster.service" "survey365-rtklib-local-caster.service"
+deploy_service "$SURVEY365_DIR/systemd/survey365-rtklib-outbound.service" "survey365-rtklib-outbound.service"
+deploy_service "$SURVEY365_DIR/systemd/survey365-rtklib-log.service" "survey365-rtklib-log.service"
 
 systemctl disable --now survey365-update.timer 2>/dev/null || true
 rm -f /etc/systemd/system/survey365-update.timer
@@ -754,6 +785,18 @@ $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active survey365
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-rtklib-local-caster.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop survey365-rtklib-local-caster.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart survey365-rtklib-local-caster.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active survey365-rtklib-local-caster.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-rtklib-outbound.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop survey365-rtklib-outbound.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart survey365-rtklib-outbound.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active survey365-rtklib-outbound.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-rtklib-log.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop survey365-rtklib-log.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart survey365-rtklib-log.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active survey365-rtklib-log.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-update.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reboot
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
@@ -838,6 +881,9 @@ echo -e "    survey365-boot:          $(service_state survey365-boot)"
 echo -e "    survey365-update:        $(service_state survey365-update)"
 echo -e "    survey365-update-check:  $(service_state survey365-update-check)"
 echo -e "    survey365-update-check.timer: $(service_state survey365-update-check.timer) ($(unit_enabled survey365-update-check.timer))"
+echo -e "    survey365-rtklib-local-caster: $(service_state survey365-rtklib-local-caster)"
+echo -e "    survey365-rtklib-outbound:     $(service_state survey365-rtklib-outbound)"
+echo -e "    survey365-rtklib-log:          $(service_state survey365-rtklib-log)"
 echo -e "    nginx:                   $(service_state nginx)"
 echo ""
 echo -e "  ${BLUE}Logs:${NC}"

@@ -5,6 +5,8 @@ All endpoints are admin-only.
 """
 
 import asyncio
+import os
+import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -16,22 +18,28 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 REPO_DIR = Path(__file__).resolve().parents[2]
 UPDATE_SERVICE = "survey365-update.service"
 UPDATE_CHECK_TIMER = "survey365-update-check.timer"
+COMMAND_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+
+
+def _run_cmd_sync(*args: str, timeout: float = 20.0) -> tuple[int, str, str]:
+    try:
+        proc = subprocess.run(
+            args,
+            cwd=str(REPO_DIR),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=COMMAND_ENV,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return 124, "", "command timed out"
+
+    return proc.returncode, proc.stdout.strip(), proc.stderr.strip()
 
 
 async def _run_cmd(*args: str, timeout: float = 20.0) -> tuple[int, str, str]:
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        cwd=str(REPO_DIR),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()
-        return 124, "", "command timed out"
-    return proc.returncode, stdout.decode().strip(), stderr.decode().strip()
+    return await asyncio.to_thread(_run_cmd_sync, *args, timeout=timeout)
 
 
 def _parse_dirty_paths(status_output: str) -> list[str]:
@@ -45,27 +53,33 @@ def _parse_dirty_paths(status_output: str) -> list[str]:
 
 @router.get("/update-status")
 async def get_update_status(_admin=Depends(require_admin)):
-    current_rc, current_commit, current_err = await _run_cmd("git", "rev-parse", "HEAD")
-    short_rc, current_short, short_err = await _run_cmd("git", "rev-parse", "--short", "HEAD")
-    branch_rc, branch, branch_err = await _run_cmd("git", "rev-parse", "--abbrev-ref", "HEAD")
-    dirty_rc, dirty_output, dirty_err = await _run_cmd(
-        "git",
-        "status",
-        "--porcelain",
-        "--untracked-files=no",
+    (
+        (current_rc, current_commit, current_err),
+        (short_rc, current_short, short_err),
+        (branch_rc, branch, branch_err),
+        (dirty_rc, dirty_output, dirty_err),
+        (remote_rc, remote_output, remote_err),
+        (service_rc, service_state, _),
+        (timer_rc, timer_state, _),
+        (enabled_rc, timer_enabled, _),
+    ) = await asyncio.gather(
+        _run_cmd("git", "rev-parse", "HEAD"),
+        _run_cmd("git", "rev-parse", "--short", "HEAD"),
+        _run_cmd("git", "rev-parse", "--abbrev-ref", "HEAD"),
+        _run_cmd("git", "status", "--porcelain", "--untracked-files=no"),
+        _run_cmd(
+            "git",
+            "ls-remote",
+            "--exit-code",
+            "--heads",
+            "origin",
+            "main",
+            timeout=15.0,
+        ),
+        _run_cmd("systemctl", "is-active", UPDATE_SERVICE),
+        _run_cmd("systemctl", "is-active", UPDATE_CHECK_TIMER),
+        _run_cmd("systemctl", "is-enabled", UPDATE_CHECK_TIMER),
     )
-    remote_rc, remote_output, remote_err = await _run_cmd(
-        "git",
-        "ls-remote",
-        "--exit-code",
-        "--heads",
-        "origin",
-        "main",
-        timeout=15.0,
-    )
-    service_rc, service_state, _ = await _run_cmd("systemctl", "is-active", UPDATE_SERVICE)
-    timer_rc, timer_state, _ = await _run_cmd("systemctl", "is-active", UPDATE_CHECK_TIMER)
-    enabled_rc, timer_enabled, _ = await _run_cmd("systemctl", "is-enabled", UPDATE_CHECK_TIMER)
 
     if current_rc != 0 or short_rc != 0 or branch_rc != 0:
         raise HTTPException(

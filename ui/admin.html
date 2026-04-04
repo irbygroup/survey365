@@ -461,7 +461,7 @@
         <form @submit.prevent="saveConfig()" class="s365-admin-form">
           <h3 class="s365-admin-subheading">GNSS Receiver</h3>
           <p class="s365-section-note">
-            Receiver connection and RTCM settings apply after restarting the Survey365 service.
+            Survey365 owns the receiver. RTKLIB generates local-caster and outbound correction streams from the receiver's raw UBX feed.
           </p>
 
           <div class="s365-form-grid s365-form-grid-3">
@@ -482,9 +482,18 @@
             </div>
           </div>
 
-          <label for="cfg-rtcm-messages">RTCM Messages</label>
-          <input type="text" id="cfg-rtcm-messages" name="cfg_rtcm_messages" x-model="config.rtcm_messages"
-                 placeholder="1005,1077,1087,1097,1127,1230(10)">
+          <div class="s365-form-grid s365-form-grid-2">
+            <div>
+              <label for="cfg-rtklib-local-messages">Local Caster RTCM Messages</label>
+              <input type="text" id="cfg-rtklib-local-messages" name="cfg_rtklib_local_messages" x-model="config.rtklib_local_messages"
+                     placeholder="1004,1005(10),1006,1008(10),1012,1019,1020,1033(10),1042,1045,1046,1077,1087,1097,1107,1127,1230">
+            </div>
+            <div>
+              <label for="cfg-rtklib-outbound-messages">Outbound RTCM Messages</label>
+              <input type="text" id="cfg-rtklib-outbound-messages" name="cfg_rtklib_outbound_messages" x-model="config.rtklib_outbound_messages"
+                     placeholder="1004,1005(10),1006,1008(10),1012,1019,1020,1033(10),1042,1045,1046,1077,1087,1097,1107,1127,1230">
+            </div>
+          </div>
 
           <div class="s365-form-grid s365-form-grid-2">
             <div>
@@ -492,10 +501,17 @@
               <input type="number" id="cfg-antenna-height" name="cfg_antenna_height" x-model="config.antenna_height_m" step="any" min="0">
             </div>
             <div>
-              <label for="cfg-elevation-display">Elevation Display</label>
-              <input type="text" id="cfg-elevation-display" name="cfg_elevation_display" value="Primary: NAVD88 ground elevation" readonly class="s365-readonly-input">
+              <label for="cfg-antenna-descriptor">Antenna Descriptor</label>
+              <input type="text" id="cfg-antenna-descriptor" name="cfg_antenna_descriptor" x-model="config.antenna_descriptor" placeholder="ADVNULLANTENNA">
             </div>
           </div>
+
+          <label for="cfg-rtcm-engine">Correction Engine</label>
+          <input type="text" id="cfg-rtcm-engine" name="cfg_rtcm_engine" x-model="config.rtcm_engine" readonly class="s365-readonly-input">
+
+          <p class="s365-section-note">
+            Broadcast coordinates use the site's ellipsoid height. NAVD88 and orthometric elevations remain display-only.
+          </p>
 
           <h3 class="s365-admin-subheading">RTCM Outputs</h3>
           <label class="s365-checkbox-row" for="cfg-rinex-enabled">
@@ -518,6 +534,9 @@
             <input type="checkbox" id="cfg-local-caster-enabled" name="cfg_local_caster_enabled" x-model="config.local_caster_enabled">
             Enable local NTRIP caster
           </label>
+          <p class="s365-section-note">
+            This is a saved configuration setting, not a live start/stop control. Save the change, then stop and start base mode for it to take effect.
+          </p>
 
           <div class="s365-form-grid s365-form-grid-2">
             <div>
@@ -531,7 +550,7 @@
           </div>
 
           <p class="s365-section-note">
-            Default outbound NTRIP caster profiles start automatically when base mode is active.
+            Default outbound NTRIP caster profiles start automatically when base mode is active. RTKLIB source pushes use password-only auth; the profile username is stored for compatibility but not used in the push command.
           </p>
 
           <h3 class="s365-admin-subheading">Map and Session</h3>
@@ -709,6 +728,10 @@
           gnss_baud: '115200',
           gnss_backend: 'ublox',
           antenna_height_m: '0.0',
+          rtcm_engine: 'rtklib',
+          rtklib_local_messages: '1004,1005(10),1006,1008(10),1012,1019,1020,1033(10),1042,1045,1046,1077,1087,1097,1107,1127,1230',
+          rtklib_outbound_messages: '1004,1005(10),1006,1008(10),1012,1019,1020,1033(10),1042,1045,1046,1077,1087,1097,1107,1127,1230',
+          antenna_descriptor: 'ADVNULLANTENNA',
           rtcm_messages: '1005,1077,1087,1097,1127,1230(10)',
           rinex_enabled: true,
           rinex_rotate_hours: '24',
@@ -750,8 +773,7 @@
             this._loadNtrip();
             this._loadWifi();
             this._loadConfig();
-            await this.loadUpdateStatus();
-            this._scheduleUpdatePoll();
+            this.loadUpdateStatus();
           }
         },
 
@@ -1148,6 +1170,10 @@
               this.config.gnss_baud = data.gnss_baud || '115200';
               this.config.gnss_backend = data.gnss_backend || 'ublox';
               this.config.antenna_height_m = data.antenna_height_m || '0.0';
+              this.config.rtcm_engine = data.rtcm_engine || 'rtklib';
+              this.config.rtklib_local_messages = data.rtklib_local_messages || '1004,1005(10),1006,1008(10),1012,1019,1020,1033(10),1042,1045,1046,1077,1087,1097,1107,1127,1230';
+              this.config.rtklib_outbound_messages = data.rtklib_outbound_messages || '1004,1005(10),1006,1008(10),1012,1019,1020,1033(10),1042,1045,1046,1077,1087,1097,1107,1127,1230';
+              this.config.antenna_descriptor = data.antenna_descriptor || 'ADVNULLANTENNA';
               this.config.rtcm_messages = data.rtcm_messages || '1005,1077,1087,1097,1127,1230(10)';
               this.config.rinex_enabled = data.rinex_enabled === true || data.rinex_enabled === 'true';
               this.config.rinex_rotate_hours = data.rinex_rotate_hours || '24';
@@ -1177,6 +1203,10 @@
                 gnss_baud: String(this.config.gnss_baud),
                 gnss_backend: this.config.gnss_backend,
                 antenna_height_m: String(this.config.antenna_height_m),
+                rtcm_engine: this.config.rtcm_engine,
+                rtklib_local_messages: this.config.rtklib_local_messages,
+                rtklib_outbound_messages: this.config.rtklib_outbound_messages,
+                antenna_descriptor: this.config.antenna_descriptor,
                 rtcm_messages: this.config.rtcm_messages,
                 rinex_enabled: this.config.rinex_enabled ? 'true' : 'false',
                 rinex_rotate_hours: String(this.config.rinex_rotate_hours),
@@ -1206,8 +1236,10 @@
         async loadUpdateStatus() {
           this.updateLoading = true;
           this.updateError = '';
+          var controller = new AbortController();
+          var timeoutId = setTimeout(() => controller.abort(), 8000);
           try {
-            var res = await fetch('/api/system/update-status');
+            var res = await fetch('/api/system/update-status', { signal: controller.signal });
             if (res.ok) {
               this.updateStatus = await res.json();
             } else {
@@ -1216,7 +1248,11 @@
               this.updateError = err.detail || err.error || 'Failed to load update status.';
             }
           } catch (err) {
-            this.updateError = 'Network error: ' + err.message;
+            this.updateError = err.name === 'AbortError'
+              ? 'Update status check timed out.'
+              : 'Network error: ' + err.message;
+          } finally {
+            clearTimeout(timeoutId);
           }
           this.updateLoading = false;
           this._scheduleUpdatePoll();

@@ -20,6 +20,10 @@ UBX_ACK_ACK_ID = 0x01
 UBX_ACK_NAK_ID = 0x00
 UBX_CFG_CLASS = 0x06
 UBX_CFG_VALSET_ID = 0x8A
+UBX_CFG_MSG_ID = 0x01
+UBX_RXM_CLASS = 0x02
+UBX_RXM_RAWX_ID = 0x15
+UBX_RXM_SFRBX_ID = 0x13
 
 # CFG-VALSET layer masks
 LAYER_RAM = 0x01
@@ -137,6 +141,11 @@ def _build_valset(keys_values: list[tuple[int, int, str]], layers: int = LAYER_A
             payload += struct.pack(fmt_key, key_id) + struct.pack("<I", value)
 
     return _ubx_message(UBX_CFG_CLASS, UBX_CFG_VALSET_ID, payload)
+
+
+def _build_cfg_msg(msg_class: int, msg_id: int, *, usb_rate: int) -> bytes:
+    payload = struct.pack("<BBBBBBBB", msg_class, msg_id, 0, 0, 0, usb_rate & 0xFF, 0, 0)
+    return _ubx_message(UBX_CFG_CLASS, UBX_CFG_MSG_ID, payload)
 
 
 def parse_nav_pvt(payload: bytes) -> dict | None:
@@ -257,6 +266,9 @@ def parse_rtcm_message_spec(message_spec: str | None) -> dict[int, int]:
 class UBloxBackend:
     """u-blox ZED-F9P backend: parse UBX frames and send configuration commands."""
 
+    receiver_model: str = "ZED-F9P"
+    receiver_firmware: str = "unknown"
+
     async def parse_frame(self, frame: bytes, state) -> None:
         """Parse a UBX frame and update GNSSState."""
         if len(frame) < 8:
@@ -355,6 +367,28 @@ class UBloxBackend:
         await serial_reader.write(msg)
         logger.info("Disabled RTCM3 output on USB")
         await asyncio.sleep(0.3)
+
+    async def enable_raw_output(self, serial_reader):
+        """Enable the raw UBX stream RTKLIB uses to encode outbound RTCM."""
+        for msg_class, msg_id, usb_rate in (
+            (UBX_RXM_CLASS, UBX_RXM_RAWX_ID, 1),
+            (UBX_RXM_CLASS, UBX_RXM_SFRBX_ID, 1),
+            (UBX_NAV_CLASS, UBX_NAV_PVT_ID, 1),
+            (UBX_NAV_CLASS, UBX_NAV_SAT_ID, 1),
+        ):
+            await serial_reader.write(_build_cfg_msg(msg_class, msg_id, usb_rate=usb_rate))
+            await asyncio.sleep(0.1)
+        logger.info("Enabled raw UBX output for RTKLIB")
+
+    async def disable_raw_output(self, serial_reader):
+        """Disable the extra raw UBX measurements used by RTKLIB."""
+        for msg_class, msg_id in (
+            (UBX_RXM_CLASS, UBX_RXM_RAWX_ID),
+            (UBX_RXM_CLASS, UBX_RXM_SFRBX_ID),
+        ):
+            await serial_reader.write(_build_cfg_msg(msg_class, msg_id, usb_rate=0))
+            await asyncio.sleep(0.1)
+        logger.info("Disabled raw UBX measurement output")
 
     async def enable_antenna_voltage(self, serial_reader):
         """Enable antenna voltage, short detection, and open detection.

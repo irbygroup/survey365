@@ -1,0 +1,27 @@
+# Managed by scripts/setup-pi.sh — deployed to /etc/systemd/system/survey365-rtklib-outbound.service
+[Unit]
+Description=Survey365 RTKLIB Outbound Push
+Requires=survey365.service
+After=survey365.service network-online.target
+Wants=network-online.target
+PartOf=survey365.service
+
+[Service]
+Type=simple
+User={user}
+Group=dialout
+WorkingDirectory={repo_dir}
+ExecStart={repo_dir}/venv/bin/python3 -m app.rtklib.launcher outbound
+Restart=on-failure
+RestartSec=5
+Environment=SURVEY365_DB={data_dir}/survey365.db
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=survey365-rtklib-outbound
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={data_dir}
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

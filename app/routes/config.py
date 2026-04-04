@@ -10,7 +10,8 @@ Known config keys and their types:
 - default_lat/default_lon/default_zoom: default map view
 - gnss_port/gnss_baud/gnss_backend: receiver connection settings
 - antenna_height_m: antenna reference point height above ground/mark in meters
-- rtcm_messages: RTCM output selection, e.g. "1005,1077,1087,1097,1127,1230(10)"
+- rtcm_messages: legacy native RTCM output selection
+- rtcm_engine/rtklib_*: RTKLIB-managed outbound RTCM settings
 - rinex_enabled/rinex_rotate_hours/rinex_data_dir: raw logging settings
 - local_caster_enabled/local_caster_port/local_caster_mountpoint: local NTRIP caster
 """
@@ -41,6 +42,10 @@ KNOWN_KEYS = {
     "gnss_backend",
     "antenna_height_m",
     "rtcm_messages",
+    "rtcm_engine",
+    "rtklib_local_messages",
+    "rtklib_outbound_messages",
+    "antenna_descriptor",
     "rinex_enabled",
     "rinex_rotate_hours",
     "rinex_data_dir",
@@ -62,6 +67,10 @@ class ConfigUpdate(BaseModel):
     gnss_backend: str | None = None
     antenna_height_m: str | None = None
     rtcm_messages: str | None = None
+    rtcm_engine: str | None = None
+    rtklib_local_messages: str | None = None
+    rtklib_outbound_messages: str | None = None
+    antenna_descriptor: str | None = None
     rinex_enabled: str | None = None
     rinex_rotate_hours: str | None = None
     rinex_data_dir: str | None = None
@@ -111,6 +120,11 @@ async def update_config(config: ConfigUpdate, _admin=Depends(require_admin)):
                         status_code=400,
                         detail="antenna_height_m must be a non-negative number",
                     ) from exc
+            if key == "rtcm_engine" and value not in {"native", "rtklib"}:
+                raise HTTPException(
+                    status_code=400,
+                    detail="rtcm_engine must be 'native' or 'rtklib'",
+                )
             await set_config(key, str(value))
 
     return {"ok": True}
