@@ -338,7 +338,7 @@ happens to say later.
 
 ---
 
-## Issue G — Local caster health reporting is inconsistent
+## Issue G — Local caster status semantics need minor cleanup
 
 ### Background
 
@@ -347,24 +347,29 @@ There are two important operator views of local-caster state:
 - `/api/status`
 - `/api/ntrip/local-caster/clients`
 
-Both should communicate the same reality.
+These endpoints do not have to report the exact same field set, but they should
+be easy to interpret together and should not drift in confusing ways.
 
-### What is broken now
+### What needs cleanup
 
-The proxy tracks upstream state in a way that is only partially tied to actual
-health. For example:
+The current proxy state is slightly conservative and slightly asymmetric:
 
 - a healthy upstream may still appear inactive until traffic has flowed
-- prior successful traffic can leave health looking better than it is
-- `/api/status` uses one notion of state and the proxy snapshot uses another
+- `/api/status` is currently oriented around operator-visible output state
+- `/api/ntrip/local-caster/clients` is currently oriented around proxy/session
+  detail
+
+That is not a merge blocker by itself, but it should be tightened enough that
+operators and future maintainers can understand what each endpoint means.
 
 ### Desired end state
 
 Local-caster state should be:
 
-- internally consistent
-- understandable from the UI/API
-- clearly based on real runtime conditions
+- internally understandable
+- documented in terms of what each endpoint is reporting
+- stable across RTKLIB proxy mode and restored native direct-broadcast mode
+- API-shape compatible where that is already part of the contract
 
 ---
 
@@ -596,6 +601,19 @@ edits.
 Make `rtcm_engine=native` actually work again for the one-release compatibility
 window.
 
+### Preferred implementation approach
+
+Use **one `NTRIPCaster` implementation with two explicit runtime modes** rather
+than splitting session-capture logic across multiple classes.
+
+Preferred pattern:
+
+- `upstream_port is None` => native **direct-broadcast mode**
+- `upstream_port is int` => RTKLIB **proxy mode**
+
+That keeps request capture, session history, inbound NMEA/GGA parsing, and
+snapshot behavior in one place instead of duplicating it.
+
 ### Implementation plan
 
 1. Rework `app/gnss/ntrip_caster.py` so it can support **two explicit modes**:
@@ -614,6 +632,7 @@ window.
    - act as an RTCMOutput-compatible sink
    - be attachable to `rtcm_fanout`
    - serve a direct sourcetable / stream without requiring an upstream
+   - preserve the existing `/api/ntrip/local-caster/clients` wire shape
 
 4. Update `_start_base_native()` in `app/gnss/base_station.py` so it:
    - creates the caster in direct mode
@@ -623,8 +642,34 @@ window.
 5. Update teardown so native mode also clears the local caster reference and
    fully restores receiver state.
 
-6. Confirm native stop behavior still disables the correct receiver-side native
-   output behavior.
+6. Explicitly restore native receiver teardown behavior, including disabling
+   receiver-generated RTCM output rather than relying only on the RTKLIB-mode
+   raw-output teardown path.
+
+### Native-mode API shape requirement
+
+When native direct mode is restored, `snapshot_clients()` must continue to
+return the same top-level response shape already used by proxy mode so the API
+contract stays stable.
+
+That means native mode should still include fields such as:
+
+- `running`
+- `port`
+- `mountpoint`
+- `bytes_served`
+- `active_clients`
+- `recent_clients`
+- `upstream_active`
+- `upstream_port`
+- `last_proxy_error`
+
+For native direct mode, the upstream-specific fields should remain present but
+use neutral values, for example:
+
+- `upstream_active: false`
+- `upstream_port: null`
+- `last_proxy_error: null`
 
 ### Files expected to change
 
@@ -677,6 +722,20 @@ Ensure every backend exposes the attributes/methods the manager now depends on.
 
 Generate real RTKBase-style metadata rather than placeholders.
 
+### Preferred implementation approach
+
+Use the existing u-blox parsing path rather than building a separate side
+channel for identity discovery.
+
+Preferred details:
+
+- add MON-VER constants in `app/gnss/ublox.py`
+- add a `poll_mon_ver()` helper that sends a zero-payload MON-VER poll
+- allow MON-VER through the existing UBX filter once so it reaches
+  `parse_frame()`
+- parse and cache model / firmware on the backend object
+- add a simple app version source, preferably `app/version.py`
+
 ### Implementation plan
 
 1. Add UBX MON-VER support to the u-blox backend:
@@ -695,6 +754,15 @@ Generate real RTKBase-style metadata rather than placeholders.
 
 6. Replace hardcoded receiver label values in the RTKLIB runtime payload with
    values derived from actual backend/app identity.
+
+### Descriptor requirement
+
+The target format should remain the planned RTKBase-style field order:
+
+`RTKBase {receiver_model},{survey365_version} {receiver_firmware}`
+
+Do not keep the current placeholder-like format that hardcodes `Survey365`
+without a version token.
 
 ### Files expected to change
 
@@ -716,6 +784,22 @@ Generate real RTKBase-style metadata rather than placeholders.
 ### Goal
 
 Prevent DB config drift from breaking stop/start logic.
+
+### Preferred implementation approach
+
+Track the engine that is **configured** separately from the engine that is
+**actually active for the current base session**.
+
+Preferred pattern:
+
+- keep the existing configured-engine load path in `GNSSManager`
+- add an explicit runtime attribute such as `manager._active_output_engine`
+- set it when base start succeeds
+- read it during teardown
+- clear it after teardown completes
+
+That keeps stop behavior tied to the stack that actually started rather than the
+current DB value.
 
 ### Implementation plan
 
@@ -746,12 +830,30 @@ Prevent DB config drift from breaking stop/start logic.
 
 ---
 
-## Workstream 5 — Make status APIs reflect reality
+## Workstream 5 — Reconcile cached status with real service state without restoring hot-path polling
 
 ### Goal
 
-Have service status in the API match actual systemd state and actual proxy
-health.
+Keep the fast cached status path, but ensure it cannot drift indefinitely from
+actual systemd state.
+
+### Scope note
+
+Do **not** reintroduce synchronous `systemctl` polling on every `/api/status`
+request or every WebSocket tick. The branch intentionally removed that hot-path
+polling, and this hardening work should preserve that performance property.
+
+### Preferred implementation approach
+
+Use **periodic or event-driven reconciliation** rather than per-request polling.
+Reasonable options include:
+
+- a lightweight background reconciliation task every 15–30 seconds
+- reconciliation on mode transitions plus occasional background refresh
+- another equivalent approach that keeps the request path fast
+
+The purpose is not to make status perfectly real-time at all costs; it is to
+prevent cached state from becoming stale after crashes or unit failures.
 
 ### Implementation plan
 
@@ -760,16 +862,15 @@ health.
    - optionally `systemctl show` / more detailed checks if needed
    - `reset-failed` support
 
-2. Replace the optimistic in-memory-only status path with one of these:
-   - real-time systemd checks on status requests, or
-   - a short-lived cache refreshed from real systemd state
+2. Keep the current cached status path, but add reconciliation against real
+   service state on a periodic or event-driven basis rather than per request.
 
-3. Define consistent local-caster health semantics across:
+3. Clarify local-caster status semantics across:
    - `/api/status`
    - `/api/ntrip/local-caster/clients`
 
-4. Decide how to represent proxy vs upstream health separately so operators can
-   understand what failed.
+4. Decide how to represent proxy vs upstream detail separately so operators can
+   understand what each endpoint is reporting.
 
 ### Files expected to change
 
@@ -780,9 +881,10 @@ health.
 
 ### Acceptance criteria
 
-- if a child RTKLIB unit crashes, `/api/status` reflects that accurately
-- local-caster status is consistent across endpoints
-- proxy health vs upstream health is understandable
+- if a child RTKLIB unit crashes, cached status is corrected within the chosen
+  reconciliation window
+- no synchronous `systemctl` polling is reintroduced into the hot request path
+- local-caster status semantics are documented and understandable
 
 ---
 
