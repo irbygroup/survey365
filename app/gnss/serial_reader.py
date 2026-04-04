@@ -75,11 +75,13 @@ class SerialReader:
         baud: int | None = None,
         raw_chunk_callback=None,
         frame_filter=None,
+        ubx_message_filter=None,
     ):
         self.port = port or os.environ.get("GNSS_PORT", DEFAULT_PORT)
         self.baud = baud or int(os.environ.get("GNSS_BAUD", str(DEFAULT_BAUD)))
         self.raw_chunk_callback = raw_chunk_callback
         self.frame_filter = frame_filter
+        self.ubx_message_filter = ubx_message_filter
         self._serial = None
         self._thread: threading.Thread | None = None
         self._running = False
@@ -186,7 +188,12 @@ class SerialReader:
         while len(buffer) > 0:
             # Try UBX first (most common from F9P)
             if len(buffer) >= 2 and buffer[0] == UBX_SYNC_1 and buffer[1] == UBX_SYNC_2:
-                frame_len = self._try_ubx(buffer)
+                frame_len = self._peek_ubx_frame_length(buffer)
+                if frame_len > 0:
+                    if not self._should_process_ubx(buffer):
+                        del buffer[:frame_len]
+                        continue
+                    frame_len = self._try_ubx(buffer)
                 if frame_len > 0:
                     frame = bytes(buffer[:frame_len])
                     if self._should_emit("ubx", frame):
@@ -235,8 +242,8 @@ class SerialReader:
             # Unknown byte — skip
             del buffer[:1]
 
-    def _try_ubx(self, buf: bytearray) -> int:
-        """Try to extract a UBX frame. Returns frame length, 0 if incomplete, -1 if invalid."""
+    def _peek_ubx_frame_length(self, buf: bytearray) -> int:
+        """Read UBX frame length from the header without checksum validation."""
         if len(buf) < 6:
             return 0
 
@@ -248,6 +255,14 @@ class SerialReader:
 
         if len(buf) < frame_len:
             return 0
+
+        return frame_len
+
+    def _try_ubx(self, buf: bytearray) -> int:
+        """Try to extract a UBX frame. Returns frame length, 0 if incomplete, -1 if invalid."""
+        frame_len = self._peek_ubx_frame_length(buf)
+        if frame_len <= 0:
+            return frame_len
 
         # Verify checksum (Fletcher-8 over class+id+length+payload)
         ck_a = 0
@@ -314,4 +329,15 @@ class SerialReader:
             return bool(self.frame_filter(frame_type, data))
         except Exception:
             logger.debug("Frame filter failed for %s", frame_type, exc_info=True)
+            return True
+
+    def _should_process_ubx(self, buf: bytearray) -> bool:
+        if self.ubx_message_filter is None:
+            return True
+        if len(buf) < 4:
+            return False
+        try:
+            return bool(self.ubx_message_filter(buf[2], buf[3]))
+        except Exception:
+            logger.debug("UBX message filter failed", exc_info=True)
             return True

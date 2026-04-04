@@ -34,6 +34,7 @@ class GNSSManager:
             baud=baud,
             raw_chunk_callback=self._handle_raw_chunk,
             frame_filter=self._should_queue_frame,
+            ubx_message_filter=self._should_process_ubx_message,
         )
         self.state = GNSSState()
         self.rtcm_fanout = RTCMFanout()
@@ -289,14 +290,19 @@ class GNSSManager:
             return
         loop.call_soon_threadsafe(self.raw_relay.publish_nowait, data)
 
-    @staticmethod
-    def _should_queue_frame(frame_type: str, data: bytes) -> bool:
+    def _should_queue_frame(self, frame_type: str, data: bytes) -> bool:
+        if frame_type == "rtcm3":
+            return self._rtcm_engine == "native"
         if frame_type != "ubx":
-            return True
+            return False
         if len(data) < 4:
             return False
         msg_class = data[2]
         msg_id = data[3]
+        return msg_class == 0x01 and msg_id in {0x07, 0x35}
+
+    @staticmethod
+    def _should_process_ubx_message(msg_class: int, msg_id: int) -> bool:
         return msg_class == 0x01 and msg_id in {0x07, 0x35}
 
 
