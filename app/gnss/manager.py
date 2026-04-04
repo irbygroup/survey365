@@ -214,12 +214,11 @@ class GNSSManager:
         except Exception as exc:
             logger.warning("Antenna voltage config failed (may already be set): %s", exc)
 
-        # Poll receiver identity (MON-VER) once at startup
-        try:
-            if hasattr(self.backend, "poll_mon_ver"):
-                await self.backend.poll_mon_ver(self.serial_reader)
-        except Exception as exc:
-            logger.warning("MON-VER poll failed: %s", exc)
+        # Schedule MON-VER identity poll as a background task so the response
+        # is picked up by the frame-consuming loop below.
+        mon_ver_task = None
+        if hasattr(self.backend, "poll_mon_ver"):
+            mon_ver_task = asyncio.create_task(self._delayed_mon_ver_poll())
 
         try:
             async for frame_type, frame_data in self.serial_reader.frames():
@@ -241,6 +240,8 @@ class GNSSManager:
                         await self.rtcm_fanout.broadcast(frame_data)
                 # NMEA frames ignored for now (UBX provides everything we need)
         finally:
+            if mon_ver_task is not None and not mon_ver_task.done():
+                mon_ver_task.cancel()
             await self.serial_reader.close()
             await self.state.set_connected(False)
 
@@ -293,6 +294,16 @@ class GNSSManager:
         """RTKBase-style descriptor: RTKBase {model},{version} {firmware}."""
         from ..version import __version__
         return f"RTKBase {self.backend.receiver_model},{__version__} {self.backend.receiver_firmware}"
+
+    async def _delayed_mon_ver_poll(self):
+        """Poll MON-VER after a short delay so the frame loop is running."""
+        try:
+            await asyncio.sleep(1.0)  # let the frame loop start consuming
+            await self.backend.poll_mon_ver(self.serial_reader)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.warning("MON-VER poll failed: %s", exc)
 
     def _handle_raw_chunk(self, data: bytes) -> None:
         loop = self.serial_reader._loop
