@@ -12,6 +12,8 @@ from ..systemd import (
     RTKLIB_LOCAL_CASTER_SERVICE,
     RTKLIB_LOG_SERVICE,
     RTKLIB_OUTBOUND_SERVICE,
+    reset_rtklib_service_state,
+    set_rtklib_service_state,
     start_service,
     stop_service,
 )
@@ -62,6 +64,7 @@ async def stop_base(manager: GNSSManager):
             except Exception as exc:
                 logger.warning("Failed stopping %s: %s", service, exc)
         clear_active_base_config()
+        reset_rtklib_service_state()
     else:
         await manager.rtcm_fanout.clear_outputs()
 
@@ -81,6 +84,7 @@ async def _start_base_rtklib(
     height: float,
     outputs: list[str],
 ) -> None:
+    reset_rtklib_service_state()
     rtklib_local_messages = await get_config("rtklib_local_messages") or RTKBASE_MESSAGE_DEFAULT
     rtklib_outbound_messages = await get_config("rtklib_outbound_messages") or RTKBASE_MESSAGE_DEFAULT
     local_enabled = "local_caster" in outputs
@@ -137,10 +141,12 @@ async def _start_base_rtklib(
         if log_enabled:
             await start_service(RTKLIB_LOG_SERVICE)
             started_services.append(RTKLIB_LOG_SERVICE)
+            set_rtklib_service_state(log=True)
 
         if outbound_profile is not None:
             await start_service(RTKLIB_OUTBOUND_SERVICE)
             started_services.append(RTKLIB_OUTBOUND_SERVICE)
+            set_rtklib_service_state(outbound=True)
 
         if local_enabled:
             await start_service(RTKLIB_LOCAL_CASTER_SERVICE)
@@ -152,6 +158,7 @@ async def _start_base_rtklib(
             )
             await proxy.start()
             manager.local_caster_proxy = proxy
+            set_rtklib_service_state(local_caster=True)
     except Exception:
         if manager.local_caster_proxy is not None:
             await manager.local_caster_proxy.close()
@@ -162,6 +169,7 @@ async def _start_base_rtklib(
             except Exception:
                 logger.exception("Failed rolling back %s", service)
         clear_active_base_config()
+        reset_rtklib_service_state()
         raise
 
     logger.info(
@@ -179,6 +187,7 @@ async def _start_base_native(
     height: float,
     outputs: list[str],
 ) -> None:
+    reset_rtklib_service_state()
     rtcm_message_spec = await get_config("rtcm_messages")
     await manager.configure_base(lat, lon, height, rtcm_message_spec=rtcm_message_spec)
 

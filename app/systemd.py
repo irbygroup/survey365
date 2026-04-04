@@ -28,6 +28,16 @@ class CommandResult:
     stderr: str
 
 
+@dataclass(slots=True)
+class RTKLIBServiceState:
+    local_caster: bool = False
+    outbound: bool = False
+    log: bool = False
+
+
+_rtklib_service_state = RTKLIBServiceState()
+
+
 async def run_command(*args: str, timeout: float = 20.0) -> CommandResult:
     proc = await asyncio.create_subprocess_exec(
         *args,
@@ -72,3 +82,24 @@ async def restart_service(name: str) -> None:
     result = await sudo_systemctl("restart", name)
     if result.returncode != 0:
         raise RuntimeError(result.stderr or f"failed to restart {name}")
+
+
+def set_rtklib_service_state(*, local_caster: bool | None = None, outbound: bool | None = None, log: bool | None = None) -> None:
+    if local_caster is not None:
+        _rtklib_service_state.local_caster = local_caster
+    if outbound is not None:
+        _rtklib_service_state.outbound = outbound
+    if log is not None:
+        _rtklib_service_state.log = log
+
+
+def reset_rtklib_service_state() -> None:
+    set_rtklib_service_state(local_caster=False, outbound=False, log=False)
+
+
+def get_rtklib_service_state() -> RTKLIBServiceState:
+    return RTKLIBServiceState(
+        local_caster=_rtklib_service_state.local_caster,
+        outbound=_rtklib_service_state.outbound,
+        log=_rtklib_service_state.log,
+    )

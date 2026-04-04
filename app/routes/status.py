@@ -9,19 +9,17 @@ from fastapi import APIRouter
 from ..geodesy import enrich_gnss_snapshot
 from ..gnss import gnss_manager, gnss_state
 from ..systemd import (
-    RTKLIB_LOCAL_CASTER_SERVICE,
-    RTKLIB_LOG_SERVICE,
-    RTKLIB_OUTBOUND_SERVICE,
-    systemctl_is_active,
+    get_rtklib_service_state,
 )
 
 router = APIRouter(prefix="/api", tags=["status"])
 
 
 async def get_services_snapshot() -> dict:
-    local_caster_active = await systemctl_is_active(RTKLIB_LOCAL_CASTER_SERVICE)
-    outbound_active = await systemctl_is_active(RTKLIB_OUTBOUND_SERVICE)
-    log_active = await systemctl_is_active(RTKLIB_LOG_SERVICE)
+    rtklib_state = get_rtklib_service_state()
+    local_caster_active = rtklib_state.local_caster
+    outbound_active = rtklib_state.outbound
+    log_active = rtklib_state.log
     rtcm_outputs = sum((1 if local_caster_active else 0, 1 if outbound_active else 0, 1 if log_active else 0))
     return {
         "gnss_connected": gnss_manager.serial_reader.is_connected,
