@@ -109,7 +109,22 @@ async def _start_base_rtklib(
     rtklib_local_messages = await get_config("rtklib_local_messages") or RTKBASE_MESSAGE_DEFAULT
     rtklib_outbound_messages = await get_config("rtklib_outbound_messages") or RTKBASE_MESSAGE_DEFAULT
     local_enabled = "local_caster" in outputs
-    outbound_profile = await _get_ntrip_profile("outbound_caster") if "ntrip_push" in outputs else None
+    outbound_profile = None
+    if "ntrip_push" in outputs:
+        outbound_profile = await _get_ntrip_profile("outbound_caster")
+        if outbound_profile is not None:
+            # Validate required outbound fields
+            missing = []
+            if not (outbound_profile.get("host") or "").strip():
+                missing.append("host")
+            if not (outbound_profile.get("mountpoint") or "").strip():
+                missing.append("mountpoint")
+            if missing:
+                logger.warning(
+                    "Outbound NTRIP profile incomplete (missing %s); skipping outbound",
+                    ", ".join(missing),
+                )
+                outbound_profile = None
     log_enabled = "rinex" in outputs
     local_caster_port = int(await get_config("local_caster_port") or "2101")
     local_caster_mountpoint = await get_config("local_caster_mountpoint") or "SURVEY365"
