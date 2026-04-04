@@ -7,7 +7,7 @@ INSERT OR IGNORE INTO config (key, value) VALUES ('gnss_baud', '115200');
 INSERT OR IGNORE INTO config (key, value) VALUES ('gnss_backend', 'ublox');
 
 -- RTCM output configuration
-INSERT OR IGNORE INTO config (key, value) VALUES ('rtcm_messages', '1005(10),1077,1087,1097,1127,1230(10)');
+INSERT OR IGNORE INTO config (key, value) VALUES ('rtcm_messages', '1005,1077,1087,1097,1127,1230(10)');
 INSERT OR IGNORE INTO config (key, value) VALUES ('rinex_enabled', 'true');
 INSERT OR IGNORE INTO config (key, value) VALUES ('rinex_rotate_hours', '24');
 INSERT OR IGNORE INTO config (key, value) VALUES ('rinex_data_dir', 'data/rinex');

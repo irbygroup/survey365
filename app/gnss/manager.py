@@ -8,8 +8,10 @@ Module-level singleton `gnss_manager` replaces the old `gnss_reader`/`gnss_state
 import asyncio
 import logging
 import os
+import time
 
 from .rtcm_fanout import RTCMFanout
+from .rtcm import build_rtcm_1006, parse_rtcm_message_type
 from .serial_reader import SerialReader
 from .state import GNSSState
 from .ublox import UBloxBackend
@@ -41,6 +43,9 @@ class GNSSManager:
         self._read_task: asyncio.Task | None = None
         self._running = False
         self._reconnect_delay = 2.0
+        self._synthetic_reference_frame: bytes | None = None
+        self._last_reference_injected_at = 0.0
+        self._last_native_reference_seen_at = 0.0
 
     async def start(self):
         """Open serial port, configure receiver, start read loop."""
@@ -78,14 +83,25 @@ class GNSSManager:
             self.serial_reader,
             message_spec=rtcm_message_spec,
         )
+        self._synthetic_reference_frame = build_rtcm_1006(lat, lon, height)
+        self._last_reference_injected_at = 0.0
+        self._last_native_reference_seen_at = 0.0
+        logger.info("Synthetic RTCM 1006 reference frame prepared for base mode")
 
     async def configure_rover(self):
         """Configure receiver for rover mode (disable TMODE3)."""
         await self.backend.configure_rover_mode(self.serial_reader)
+        self.clear_base_reference()
 
     async def inject_rtcm(self, data: bytes):
         """Write RTCM3 corrections into the receiver (for rover/establish mode)."""
         await self.serial_reader.write(data)
+
+    def clear_base_reference(self):
+        """Clear synthetic base reference framing state."""
+        self._synthetic_reference_frame = None
+        self._last_reference_injected_at = 0.0
+        self._last_native_reference_seen_at = 0.0
 
     async def generate_gga(self) -> str | None:
         """Generate an NMEA GGA sentence from current position for VRS feedback."""
@@ -176,6 +192,17 @@ class GNSSManager:
                 if frame_type == "ubx":
                     await self.backend.parse_frame(frame_data, self.state)
                 elif frame_type == "rtcm3":
+                    now = time.monotonic()
+                    msg_type = parse_rtcm_message_type(frame_data)
+                    if msg_type in {1005, 1006}:
+                        self._last_native_reference_seen_at = now
+                    elif (
+                        self._synthetic_reference_frame is not None
+                        and now - self._last_native_reference_seen_at > 2.0
+                        and now - self._last_reference_injected_at >= 1.0
+                    ):
+                        await self.rtcm_fanout.broadcast(self._synthetic_reference_frame)
+                        self._last_reference_injected_at = now
                     await self.rtcm_fanout.broadcast(frame_data)
                 # NMEA frames ignored for now (UBX provides everything we need)
         finally:

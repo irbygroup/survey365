@@ -484,7 +484,7 @@
 
           <label for="cfg-rtcm-messages">RTCM Messages</label>
           <input type="text" id="cfg-rtcm-messages" name="cfg_rtcm_messages" x-model="config.rtcm_messages"
-                 placeholder="1005(10),1077,1087,1097,1127,1230(10)">
+                 placeholder="1005,1077,1087,1097,1127,1230(10)">
 
           <div class="s365-form-grid s365-form-grid-2">
             <div>
@@ -709,7 +709,7 @@
           gnss_baud: '115200',
           gnss_backend: 'ublox',
           antenna_height_m: '0.0',
-          rtcm_messages: '1005(10),1077,1087,1097,1127,1230(10)',
+          rtcm_messages: '1005,1077,1087,1097,1127,1230(10)',
           rinex_enabled: true,
           rinex_rotate_hours: '24',
           rinex_data_dir: 'data/rinex',
@@ -1148,7 +1148,7 @@
               this.config.gnss_baud = data.gnss_baud || '115200';
               this.config.gnss_backend = data.gnss_backend || 'ublox';
               this.config.antenna_height_m = data.antenna_height_m || '0.0';
-              this.config.rtcm_messages = data.rtcm_messages || '1005(10),1077,1087,1097,1127,1230(10)';
+              this.config.rtcm_messages = data.rtcm_messages || '1005,1077,1087,1097,1127,1230(10)';
               this.config.rinex_enabled = data.rinex_enabled === true || data.rinex_enabled === 'true';
               this.config.rinex_rotate_hours = data.rinex_rotate_hours || '24';
               this.config.rinex_data_dir = data.rinex_data_dir || 'data/rinex';

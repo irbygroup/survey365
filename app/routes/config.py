@@ -10,7 +10,7 @@ Known config keys and their types:
 - default_lat/default_lon/default_zoom: default map view
 - gnss_port/gnss_baud/gnss_backend: receiver connection settings
 - antenna_height_m: antenna reference point height above ground/mark in meters
-- rtcm_messages: RTCM output selection, e.g. "1005(10),1077,1087,1097,1127,1230(10)"
+- rtcm_messages: RTCM output selection, e.g. "1005,1077,1087,1097,1127,1230(10)"
 - rinex_enabled/rinex_rotate_hours/rinex_data_dir: raw logging settings
 - local_caster_enabled/local_caster_port/local_caster_mountpoint: local NTRIP caster
 """

@@ -10,6 +10,8 @@ from pydantic import BaseModel, Field
 
 from ..auth import is_admin_request, require_admin
 from ..db import get_db
+from ..gnss import gnss_manager
+from ..gnss.ntrip_caster import NTRIPCaster
 
 router = APIRouter(prefix="/api/ntrip", tags=["ntrip"])
 
@@ -219,3 +221,20 @@ async def delete_profile(profile_id: int, _admin=Depends(require_admin)):
         await db.commit()
 
     return {"ok": True}
+
+
+@router.get("/local-caster/clients")
+async def get_local_caster_clients(_admin=Depends(require_admin)):
+    """Return active and recent local-caster client sessions with captured inbound data."""
+    for output in gnss_manager.rtcm_fanout.outputs:
+        if isinstance(output, NTRIPCaster):
+            return output.snapshot_clients()
+
+    return {
+        "running": False,
+        "port": None,
+        "mountpoint": None,
+        "bytes_served": 0,
+        "active_clients": [],
+        "recent_clients": [],
+    }

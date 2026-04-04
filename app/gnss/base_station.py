@@ -68,7 +68,12 @@ async def start_base(
     if "local_caster" in outputs:
         caster_port = int(await get_config("local_caster_port") or "2101")
         caster_mount = await get_config("local_caster_mountpoint") or "SURVEY365"
-        caster = NTRIPCaster(port=caster_port, mountpoint=caster_mount)
+        caster = NTRIPCaster(
+            port=caster_port,
+            mountpoint=caster_mount,
+            latitude=lat,
+            longitude=lon,
+        )
         await caster.start()
         manager.rtcm_fanout.add_output(caster)
 
@@ -82,6 +87,7 @@ async def start_base(
 async def stop_base(manager: GNSSManager):
     """Stop all RTCM outputs and disable RTCM generation on receiver."""
     await manager.rtcm_fanout.clear_outputs()
+    manager.clear_base_reference()
     try:
         await manager.backend.disable_rtcm_output(manager.serial_reader)
     except Exception as exc:

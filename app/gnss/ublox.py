@@ -71,7 +71,7 @@ CONSTELLATION_MAP = {
 # Default RTCM message rates: {key_id: rate}
 # Rate=1 means every measurement epoch; rate=10 means every 10th epoch
 DEFAULT_RTCM_RATES = {
-    CFG_MSGOUT_RTCM_1005_USB: 10,   # Station coordinates, every 10s
+    CFG_MSGOUT_RTCM_1005_USB: 1,    # Station coordinates, every epoch
     CFG_MSGOUT_RTCM_1077_USB: 1,    # GPS MSM7, every epoch
     CFG_MSGOUT_RTCM_1087_USB: 1,    # GLONASS MSM7
     CFG_MSGOUT_RTCM_1097_USB: 1,    # Galileo MSM7
@@ -218,7 +218,7 @@ def parse_nav_sat(payload: bytes) -> list[dict]:
 
 
 def parse_rtcm_message_spec(message_spec: str | None) -> dict[int, int]:
-    """Parse config like '1005(10),1077,1087,1097,1127,1230(10)'."""
+    """Parse config like '1005,1077,1087,1097,1127,1230(10)'."""
     if not message_spec or not message_spec.strip():
         return dict(DEFAULT_RTCM_RATES)
 
