@@ -577,6 +577,8 @@ apt-get update -qq
 DEPS=(
     build-essential
     curl
+    pkg-config
+    unzip
     python3-venv
     python3-dev
     libsqlite3-mod-spatialite
@@ -789,14 +791,17 @@ $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-rtklib-local
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop survey365-rtklib-local-caster.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart survey365-rtklib-local-caster.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active survey365-rtklib-local-caster.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reset-failed survey365-rtklib-local-caster.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-rtklib-outbound.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop survey365-rtklib-outbound.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart survey365-rtklib-outbound.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active survey365-rtklib-outbound.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reset-failed survey365-rtklib-outbound.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-rtklib-log.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl stop survey365-rtklib-log.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart survey365-rtklib-log.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active survey365-rtklib-log.service
+$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reset-failed survey365-rtklib-log.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl start survey365-update.service
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reboot
 $TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
