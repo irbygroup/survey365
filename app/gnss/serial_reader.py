@@ -188,13 +188,13 @@ class SerialReader:
         while len(buffer) > 0:
             # Try UBX first (most common from F9P)
             if len(buffer) >= 2 and buffer[0] == UBX_SYNC_1 and buffer[1] == UBX_SYNC_2:
-                frame_len = self._peek_ubx_frame_length(buffer)
+                # Always validate checksum first before deciding to skip
+                frame_len = self._try_ubx(buffer)
                 if frame_len > 0:
                     if not self._should_process_ubx(buffer):
+                        # Valid frame but filtered out — skip without queueing
                         del buffer[:frame_len]
                         continue
-                    frame_len = self._try_ubx(buffer)
-                if frame_len > 0:
                     frame = bytes(buffer[:frame_len])
                     if self._should_emit("ubx", frame):
                         self._emit("ubx", frame)
