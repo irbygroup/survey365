@@ -53,6 +53,7 @@ class GNSSManager:
         self._running = False
         self._reconnect_delay = 2.0
         self._rtcm_engine = "native"
+        self._active_output_engine: str | None = None  # set by start_base, used by stop_base
         self._synthetic_reference_frame: bytes | None = None
         self._last_reference_injected_at = 0.0
         self._last_native_reference_seen_at = 0.0
