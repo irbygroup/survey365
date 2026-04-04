@@ -10,6 +10,7 @@ import logging
 import os
 import time
 
+from .raw_relay import RawRelay
 from .rtcm_fanout import RTCMFanout
 from .rtcm import build_rtcm_1006, parse_rtcm_message_type
 from .serial_reader import SerialReader
@@ -28,9 +29,15 @@ class GNSSManager:
         baud: int | None = None,
         backend_name: str | None = None,
     ):
-        self.serial_reader = SerialReader(port=port, baud=baud)
+        self.serial_reader = SerialReader(
+            port=port,
+            baud=baud,
+            raw_chunk_callback=self._handle_raw_chunk,
+        )
         self.state = GNSSState()
         self.rtcm_fanout = RTCMFanout()
+        self.raw_relay = RawRelay()
+        self.local_caster_proxy = None
 
         backend_name = backend_name or os.environ.get("GNSS_BACKEND", "ublox")
         if backend_name == "ublox":
@@ -43,6 +50,7 @@ class GNSSManager:
         self._read_task: asyncio.Task | None = None
         self._running = False
         self._reconnect_delay = 2.0
+        self._rtcm_engine = "native"
         self._synthetic_reference_frame: bytes | None = None
         self._last_reference_injected_at = 0.0
         self._last_native_reference_seen_at = 0.0
@@ -50,6 +58,7 @@ class GNSSManager:
     async def start(self):
         """Open serial port, configure receiver, start read loop."""
         await self._load_runtime_config()
+        await self.raw_relay.start()
         self._running = True
         self._read_task = asyncio.create_task(self._run_loop())
         logger.info("GNSS manager started")
@@ -65,7 +74,15 @@ class GNSSManager:
                 pass
             self._read_task = None
 
+        if self.local_caster_proxy is not None:
+            try:
+                await self.local_caster_proxy.close()
+            except Exception:
+                logger.exception("Failed stopping local caster proxy")
+            self.local_caster_proxy = None
+
         await self.rtcm_fanout.clear_outputs()
+        await self.raw_relay.stop()
         await self.serial_reader.close()
         await self.state.set_connected(False)
         logger.info("GNSS manager stopped")
@@ -79,18 +96,25 @@ class GNSSManager:
     ):
         """Configure receiver as fixed-position base station."""
         await self.backend.configure_base_mode(self.serial_reader, lat, lon, height)
-        await self.backend.enable_rtcm_output(
-            self.serial_reader,
-            message_spec=rtcm_message_spec,
-        )
-        self._synthetic_reference_frame = build_rtcm_1006(lat, lon, height)
-        self._last_reference_injected_at = 0.0
-        self._last_native_reference_seen_at = 0.0
-        logger.info("Synthetic RTCM 1006 reference frame prepared for base mode")
+        if self._rtcm_engine == "rtklib":
+            await self.backend.disable_rtcm_output(self.serial_reader)
+            await self.backend.enable_raw_output(self.serial_reader)
+            self.clear_base_reference()
+        else:
+            await self.backend.enable_rtcm_output(
+                self.serial_reader,
+                message_spec=rtcm_message_spec,
+            )
+            self._synthetic_reference_frame = build_rtcm_1006(lat, lon, height)
+            self._last_reference_injected_at = 0.0
+            self._last_native_reference_seen_at = 0.0
+            logger.info("Synthetic RTCM 1006 reference frame prepared for base mode")
 
     async def configure_rover(self):
         """Configure receiver for rover mode (disable TMODE3)."""
         await self.backend.configure_rover_mode(self.serial_reader)
+        if self._rtcm_engine == "rtklib":
+            await self.backend.disable_raw_output(self.serial_reader)
         self.clear_base_reference()
 
     async def inject_rtcm(self, data: bytes):
@@ -192,18 +216,19 @@ class GNSSManager:
                 if frame_type == "ubx":
                     await self.backend.parse_frame(frame_data, self.state)
                 elif frame_type == "rtcm3":
-                    now = time.monotonic()
-                    msg_type = parse_rtcm_message_type(frame_data)
-                    if msg_type in {1005, 1006}:
-                        self._last_native_reference_seen_at = now
-                    elif (
-                        self._synthetic_reference_frame is not None
-                        and now - self._last_native_reference_seen_at > 2.0
-                        and now - self._last_reference_injected_at >= 1.0
-                    ):
-                        await self.rtcm_fanout.broadcast(self._synthetic_reference_frame)
-                        self._last_reference_injected_at = now
-                    await self.rtcm_fanout.broadcast(frame_data)
+                    if self._rtcm_engine == "native":
+                        now = time.monotonic()
+                        msg_type = parse_rtcm_message_type(frame_data)
+                        if msg_type in {1005, 1006}:
+                            self._last_native_reference_seen_at = now
+                        elif (
+                            self._synthetic_reference_frame is not None
+                            and now - self._last_native_reference_seen_at > 2.0
+                            and now - self._last_reference_injected_at >= 1.0
+                        ):
+                            await self.rtcm_fanout.broadcast(self._synthetic_reference_frame)
+                            self._last_reference_injected_at = now
+                        await self.rtcm_fanout.broadcast(frame_data)
                 # NMEA frames ignored for now (UBX provides everything we need)
         finally:
             await self.serial_reader.close()
@@ -216,6 +241,7 @@ class GNSSManager:
         port = await get_config("gnss_port")
         baud = await get_config("gnss_baud")
         backend_name = await get_config("gnss_backend")
+        rtcm_engine = await get_config("rtcm_engine")
 
         self.serial_reader.port = (
             (port or "").strip()
@@ -241,12 +267,26 @@ class GNSSManager:
 
             self.backend = QuectelBackend()
 
+        self._rtcm_engine = (rtcm_engine or "native").strip().lower()
+        if self._rtcm_engine not in {"native", "rtklib"}:
+            self._rtcm_engine = "native"
+
         logger.info(
-            "GNSS runtime config loaded: port=%s baud=%s backend=%s",
+            "GNSS runtime config loaded: port=%s baud=%s backend=%s rtcm_engine=%s",
             self.serial_reader.port,
             self.serial_reader.baud,
             selected_backend,
+            self._rtcm_engine,
         )
+
+    def receiver_descriptor(self) -> str:
+        return f"RTKBase {self.backend.receiver_model},Survey365 {self.backend.receiver_firmware}"
+
+    def _handle_raw_chunk(self, data: bytes) -> None:
+        loop = self.serial_reader._loop
+        if not data or loop is None or not loop.is_running():
+            return
+        loop.call_soon_threadsafe(asyncio.create_task, self.raw_relay.publish(data))
 
 
 # Module-level singleton

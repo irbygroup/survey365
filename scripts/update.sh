@@ -250,6 +250,11 @@ sudo "$REPO_DIR/scripts/setup-pi.sh" "${INSTALL_ARGS[@]}"
 
 sleep 2
 
+if ! /usr/local/bin/str2str --version >/dev/null 2>&1; then
+    err "RTKLIB str2str is missing after update"
+    exit 1
+fi
+
 if sudo systemctl is-active --quiet survey365; then
     ok "survey365 is running"
 else
@@ -257,6 +262,9 @@ else
     echo ""
     info "Recent logs:"
     journalctl -u survey365 --no-pager -n 20
+    journalctl -u survey365-rtklib-local-caster --no-pager -n 20 || true
+    journalctl -u survey365-rtklib-outbound --no-pager -n 20 || true
+    journalctl -u survey365-rtklib-log --no-pager -n 20 || true
     exit 1
 fi
 

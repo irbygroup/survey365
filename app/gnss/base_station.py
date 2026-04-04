@@ -1,18 +1,33 @@
 """
-Base station controller: start/stop base mode with RTCM output management.
-
-All configuration goes directly to the receiver via UBX commands.
+Base station controller: start/stop base mode with RTKLIB-managed outputs.
 """
 
 import logging
+from pathlib import Path
 
 from ..db import get_config
+from ..rtklib.runtime import clear_active_base_config, write_active_base_config
+from ..runtime_paths import get_data_dir
+from ..systemd import (
+    RTKLIB_LOCAL_CASTER_SERVICE,
+    RTKLIB_LOG_SERVICE,
+    RTKLIB_OUTBOUND_SERVICE,
+    start_service,
+    stop_service,
+)
 from .manager import GNSSManager
 from .ntrip_caster import NTRIPCaster
 from .ntrip_push import NTRIPPush
 from .rinex_logger import RINEXLogger
 
 logger = logging.getLogger("survey365.gnss.base_station")
+
+RTKBASE_MESSAGE_DEFAULT = (
+    "1004,1005(10),1006,1008(10),1012,1019,1020,1033(10),"
+    "1042,1045,1046,1077,1087,1097,1107,1127,1230"
+)
+RAW_RELAY_PORT = 5015
+LOCAL_CASTER_INTERNAL_PORT = 2110
 
 
 async def start_base(
@@ -22,29 +37,151 @@ async def start_base(
     height: float,
     outputs: list[str] | None = None,
 ):
-    """Configure F9P as base station and start RTCM outputs.
-
-    Args:
-        manager: The GNSS manager singleton
-        lat: Base station latitude (degrees)
-        lon: Base station longitude (degrees)
-        height: Ellipsoid height (meters)
-        outputs: List of output names to enable: "rinex", "ntrip_push", "local_caster"
-                 Defaults to ["rinex"] if None.
-    """
+    """Configure the receiver as a base and start the enabled output stack."""
     if outputs is None:
         outputs = await _resolve_outputs()
 
-    # Configure receiver as fixed-position base
-    rtcm_message_spec = await get_config("rtcm_messages")
-    await manager.configure_base(
-        lat,
-        lon,
-        height,
-        rtcm_message_spec=rtcm_message_spec,
+    rtcm_engine = (await get_config("rtcm_engine") or "native").strip().lower()
+    if rtcm_engine == "rtklib":
+        await _start_base_rtklib(manager, lat, lon, height, outputs)
+        return
+
+    await _start_base_native(manager, lat, lon, height, outputs)
+
+
+async def stop_base(manager: GNSSManager):
+    """Stop the active base output stack and return receiver to rover mode."""
+    rtcm_engine = (await get_config("rtcm_engine") or "native").strip().lower()
+    if rtcm_engine == "rtklib":
+        if manager.local_caster_proxy is not None:
+            await manager.local_caster_proxy.close()
+            manager.local_caster_proxy = None
+        for service in (RTKLIB_LOCAL_CASTER_SERVICE, RTKLIB_OUTBOUND_SERVICE, RTKLIB_LOG_SERVICE):
+            try:
+                await stop_service(service)
+            except Exception as exc:
+                logger.warning("Failed stopping %s: %s", service, exc)
+        clear_active_base_config()
+    else:
+        await manager.rtcm_fanout.clear_outputs()
+
+    manager.clear_base_reference()
+    try:
+        await manager.configure_rover()
+    except Exception as exc:
+        logger.warning("Failed returning receiver to rover mode: %s", exc)
+
+    logger.info("Base station stopped")
+
+
+async def _start_base_rtklib(
+    manager: GNSSManager,
+    lat: float,
+    lon: float,
+    height: float,
+    outputs: list[str],
+) -> None:
+    rtklib_local_messages = await get_config("rtklib_local_messages") or RTKBASE_MESSAGE_DEFAULT
+    rtklib_outbound_messages = await get_config("rtklib_outbound_messages") or RTKBASE_MESSAGE_DEFAULT
+    local_enabled = "local_caster" in outputs
+    outbound_profile = await _get_ntrip_profile("outbound_caster") if "ntrip_push" in outputs else None
+    log_enabled = "rinex" in outputs
+    local_caster_port = int(await get_config("local_caster_port") or "2101")
+    local_caster_mountpoint = await get_config("local_caster_mountpoint") or "SURVEY365"
+    rinex_rotate_hours = int(await get_config("rinex_rotate_hours") or "24")
+    rinex_data_dir = await get_config("rinex_data_dir") or str(get_data_dir() / "rinex")
+    antenna_descriptor = await get_config("antenna_descriptor") or "ADVNULLANTENNA"
+
+    await manager.configure_base(lat, lon, height, rtcm_message_spec=None)
+
+    runtime = {
+        "raw_relay_port": RAW_RELAY_PORT,
+        "trace_level": 0,
+        "position": {
+            "lat": lat,
+            "lon": lon,
+            "height": height,
+        },
+        "receiver_descriptor": manager.receiver_descriptor(),
+        "antenna_descriptor": antenna_descriptor,
+        "outputs": {
+            "local_caster": {
+                "enabled": local_enabled,
+                "mountpoint": local_caster_mountpoint,
+                "messages": rtklib_local_messages,
+                "internal_port": LOCAL_CASTER_INTERNAL_PORT,
+                "receiver_frequency_count": "2",
+                "receiver_label": "RTKBase_ZED-F9P,Survey365",
+                "username": "",
+                "password": "",
+            },
+            "outbound": {
+                "enabled": outbound_profile is not None,
+                "host": outbound_profile["host"] if outbound_profile else "",
+                "port": outbound_profile["port"] if outbound_profile else 2101,
+                "mountpoint": outbound_profile["mountpoint"] if outbound_profile else "",
+                "password": outbound_profile["password"] if outbound_profile else "",
+                "messages": rtklib_outbound_messages,
+            },
+            "log": {
+                "enabled": log_enabled,
+                "data_dir": str(_resolve_data_dir(rinex_data_dir)),
+                "rotate_hours": rinex_rotate_hours,
+            },
+        },
+    }
+    write_active_base_config(runtime)
+
+    started_services: list[str] = []
+    try:
+        if log_enabled:
+            await start_service(RTKLIB_LOG_SERVICE)
+            started_services.append(RTKLIB_LOG_SERVICE)
+
+        if outbound_profile is not None:
+            await start_service(RTKLIB_OUTBOUND_SERVICE)
+            started_services.append(RTKLIB_OUTBOUND_SERVICE)
+
+        if local_enabled:
+            await start_service(RTKLIB_LOCAL_CASTER_SERVICE)
+            started_services.append(RTKLIB_LOCAL_CASTER_SERVICE)
+            proxy = NTRIPCaster(
+                port=local_caster_port,
+                mountpoint=local_caster_mountpoint,
+                upstream_port=LOCAL_CASTER_INTERNAL_PORT,
+            )
+            await proxy.start()
+            manager.local_caster_proxy = proxy
+    except Exception:
+        if manager.local_caster_proxy is not None:
+            await manager.local_caster_proxy.close()
+            manager.local_caster_proxy = None
+        for service in reversed(started_services):
+            try:
+                await stop_service(service)
+            except Exception:
+                logger.exception("Failed rolling back %s", service)
+        clear_active_base_config()
+        raise
+
+    logger.info(
+        "Base station started with RTKLIB outputs: local=%s outbound=%s log=%s",
+        local_enabled,
+        outbound_profile is not None,
+        log_enabled,
     )
 
-    # Start requested outputs
+
+async def _start_base_native(
+    manager: GNSSManager,
+    lat: float,
+    lon: float,
+    height: float,
+    outputs: list[str],
+) -> None:
+    rtcm_message_spec = await get_config("rtcm_messages")
+    await manager.configure_base(lat, lon, height, rtcm_message_spec=rtcm_message_spec)
+
     if "rinex" in outputs:
         data_dir = await get_config("rinex_data_dir") or "data/rinex"
         rotate_hours = int(await get_config("rinex_rotate_hours") or "24")
@@ -71,33 +208,22 @@ async def start_base(
         caster = NTRIPCaster(
             port=caster_port,
             mountpoint=caster_mount,
-            latitude=lat,
-            longitude=lon,
+            upstream_port=LOCAL_CASTER_INTERNAL_PORT,
         )
         await caster.start()
-        manager.rtcm_fanout.add_output(caster)
+        manager.local_caster_proxy = caster
 
     output_names = [o.name for o in manager.rtcm_fanout.outputs]
     logger.info(
-        "Base station started: lat=%.9f lon=%.9f height=%.4f outputs=%s",
-        lat, lon, height, output_names,
+        "Base station started in native mode: lat=%.9f lon=%.9f height=%.4f outputs=%s",
+        lat,
+        lon,
+        height,
+        output_names,
     )
 
 
-async def stop_base(manager: GNSSManager):
-    """Stop all RTCM outputs and disable RTCM generation on receiver."""
-    await manager.rtcm_fanout.clear_outputs()
-    manager.clear_base_reference()
-    try:
-        await manager.backend.disable_rtcm_output(manager.serial_reader)
-    except Exception as exc:
-        logger.warning("Failed to disable RTCM output on receiver: %s", exc)
-
-    logger.info("Base station stopped")
-
-
 async def _get_ntrip_profile(profile_type: str) -> dict | None:
-    """Load the default NTRIP profile of the given type from the database."""
     from ..db import get_db
 
     async with get_db() as db:
@@ -123,7 +249,6 @@ async def _get_ntrip_profile(profile_type: str) -> dict | None:
 
 
 async def _resolve_outputs() -> list[str]:
-    """Resolve enabled RTCM outputs from config and default profiles."""
     outputs: list[str] = []
 
     if _config_bool(await get_config("rinex_enabled"), default=True):
@@ -142,3 +267,10 @@ def _config_bool(value: str | None, *, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _resolve_data_dir(value: str) -> Path:
+    path = Path(value)
+    if not path.is_absolute():
+        path = get_data_dir() / path
+    return path

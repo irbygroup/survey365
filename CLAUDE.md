@@ -53,6 +53,7 @@ Survey365 uses:
 - systemd for services
 - nginx for local HTTP
 - direct serial GNSS control with `pyubx2` and `pyserial`
+- RTKLIB `str2str` for base-station correction encoding and publishing
 
 Main admin APIs:
 
@@ -98,6 +99,9 @@ Managed files:
 - `systemd/survey365-update.service` -> `/etc/systemd/system/survey365-update.service`
 - `systemd/survey365-update-check.service` -> `/etc/systemd/system/survey365-update-check.service`
 - `systemd/survey365-update-check.timer` -> `/etc/systemd/system/survey365-update-check.timer`
+- `systemd/survey365-rtklib-local-caster.service` -> `/etc/systemd/system/survey365-rtklib-local-caster.service`
+- `systemd/survey365-rtklib-outbound.service` -> `/etc/systemd/system/survey365-rtklib-outbound.service`
+- `systemd/survey365-rtklib-log.service` -> `/etc/systemd/system/survey365-rtklib-log.service`
 - `nginx/survey365.conf` -> `/etc/nginx/sites-available/survey365`
 - inline udev rule -> `/etc/udev/rules.d/99-survey365-gnss.rules`
 - inline sudoers policy -> `/etc/sudoers.d/survey365`
@@ -228,6 +232,10 @@ sudo reboot
 - Logging is written beside the active database when `SURVEY365_DB` is set.
 - `scripts/setup-wifi.sh` creates managed `rtk-*` NetworkManager profiles on both adapters.
 - `wlan1` gets the lower metric; `wlan0` gets `metric + 550`.
+- Survey365 still owns `/dev/ttyGNSS`, parses live UBX navigation messages, and serves the UI/API.
+- RTKLIB consumes a localhost raw UBX relay on `127.0.0.1:5015` and generates all base correction outputs.
+- The external local caster is proxied by Survey365 for rover/GGA visibility; RTKLIB serves the internal caster on port `2110`.
+- Outbound source pushes use password-only auth in the RTKLIB command line; stored NTRIP usernames are retained for compatibility but not used by the push process.
 
 ## Development Notes
 

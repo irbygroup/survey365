@@ -87,6 +87,10 @@ async def lifespan(app: FastAPI):
     # Start GNSS manager (serial reader + backend)
     await gnss_manager.start()
 
+    from .routes.mode import auto_resume_last_session_if_enabled
+
+    await auto_resume_last_session_if_enabled()
+
     # Start WebSocket status broadcast
     ws_live.start_broadcast()
 

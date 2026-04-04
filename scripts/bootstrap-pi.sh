@@ -7,11 +7,11 @@
 #   2. Fixes locale (en_US.UTF-8)
 #   3. Prompts for and sets the Pi hostname
 #   4. Runs a full OS upgrade
-#   5. Installs prerequisite packages (git, gh, minicom, python3-serial)
+#   5. Installs prerequisite packages (git, gh, minicom, python3-serial, curl)
 #   6. Installs and configures Tailscale
 #   7. Adds SSH authorized keys for workstations
 #   8. Clones the Survey365 repository
-#   9. Runs the Survey365 installer
+#   9. Runs the Survey365 installer, including the pinned RTKLIB build
 #  10. Applies any database-backed Wi-Fi profiles
 #
 # Usage:
@@ -160,7 +160,7 @@ ok "OS upgraded"
 # ── Step 5: Install prerequisite packages ────────────────────────────────
 info "Installing prerequisite packages..."
 
-PREREQS=(git gh python3-serial minicom)
+PREREQS=(git gh python3-serial minicom curl)
 NEEDED=()
 for pkg in "${PREREQS[@]}"; do
     if ! dpkg -s "$pkg" &>/dev/null; then

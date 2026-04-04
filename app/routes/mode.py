@@ -140,7 +140,8 @@ async def start_known_base(req: KnownBaseRequest):
             "ortho_height": site["ortho_height"],
         }
 
-        # End previous session if active
+        # End previous session/output stack if active
+        await stop_base(gnss_manager)
         await _end_current_session()
 
         # Configure GNSS receiver and start RTCM outputs
@@ -225,7 +226,8 @@ async def _run_relative_base(duration: int):
     global _establishing, _establish_progress
 
     async with _mode_lock:
-        # End previous session
+        # End previous session/output stack
+        await stop_base(gnss_manager)
         await _end_current_session()
 
         _current_mode = "relative_base"
@@ -475,7 +477,8 @@ async def _run_cors_establish(
     global _establishing, _establish_progress, _cors_ntrip_client
 
     async with _mode_lock:
-        # End previous session
+        # End previous session/output stack
+        await stop_base(gnss_manager)
         await _end_current_session()
 
         _current_mode = "cors_establish"
@@ -893,3 +896,21 @@ async def _end_current_session():
             )
             await db.commit()
         _current_session_id = None
+
+
+async def auto_resume_last_session_if_enabled() -> None:
+    """Resume the last base session if auto-resume is enabled."""
+    auto_resume = (await get_config("auto_resume") or "").strip().lower()
+    if auto_resume not in {"1", "true", "yes", "on"}:
+        return
+
+    if _current_mode != "idle":
+        return
+
+    try:
+        await resume_mode()
+        logger.info("Auto-resume completed")
+    except HTTPException as exc:
+        logger.info("Auto-resume skipped: %s", exc.detail)
+    except Exception as exc:
+        logger.warning("Auto-resume failed: %s", exc)

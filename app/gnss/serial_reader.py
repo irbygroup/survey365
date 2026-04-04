@@ -73,9 +73,11 @@ class SerialReader:
         self,
         port: str | None = None,
         baud: int | None = None,
+        raw_chunk_callback=None,
     ):
         self.port = port or os.environ.get("GNSS_PORT", DEFAULT_PORT)
         self.baud = baud or int(os.environ.get("GNSS_BAUD", str(DEFAULT_BAUD)))
+        self.raw_chunk_callback = raw_chunk_callback
         self._serial = None
         self._thread: threading.Thread | None = None
         self._running = False
@@ -161,6 +163,12 @@ class SerialReader:
 
                 if not data:
                     continue
+
+                if self.raw_chunk_callback is not None:
+                    try:
+                        self.raw_chunk_callback(bytes(data))
+                    except Exception:
+                        logger.debug("Raw chunk callback failed", exc_info=True)
 
                 buffer.extend(data)
                 self._extract_frames(buffer)

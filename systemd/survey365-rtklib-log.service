@@ -1,0 +1,26 @@
+# Managed by scripts/setup-pi.sh — deployed to /etc/systemd/system/survey365-rtklib-log.service
+[Unit]
+Description=Survey365 RTKLIB Raw GNSS Logging
+Requires=survey365.service
+After=survey365.service
+PartOf=survey365.service
+
+[Service]
+Type=simple
+User={user}
+Group=dialout
+WorkingDirectory={repo_dir}
+ExecStart={repo_dir}/venv/bin/python3 -m app.rtklib.launcher log
+Restart=on-failure
+RestartSec=5
+Environment=SURVEY365_DB={data_dir}/survey365.db
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=survey365-rtklib-log
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths={data_dir}
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

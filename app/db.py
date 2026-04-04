@@ -280,6 +280,42 @@ async def init_db():
                     except Exception:
                         pass
 
+        # --- Migration 009: RTKLIB output configuration ---
+        cursor = await db.execute(
+            "SELECT value FROM config WHERE key = 'rtcm_engine'"
+        )
+        if await cursor.fetchone() is None:
+            migration_file = MIGRATIONS_DIR / "009_rtklib_config.sql"
+            if migration_file.exists():
+                sql = migration_file.read_text()
+                for stmt in [s.strip() for s in sql.split(";") if s.strip()]:
+                    try:
+                        await db.execute(stmt)
+                    except Exception:
+                        pass
+
+            cursor = await db.execute(
+                "SELECT value FROM config WHERE key = 'rtcm_messages'"
+            )
+            row = await cursor.fetchone()
+            legacy_messages = (row["value"] if row is not None else "") or ""
+            default_native = "1005,1077,1087,1097,1127,1230(10)"
+            if legacy_messages and legacy_messages != default_native:
+                await db.execute(
+                    """
+                    INSERT OR REPLACE INTO config (key, value, updated_at)
+                    VALUES ('rtklib_local_messages', ?, datetime('now'))
+                    """,
+                    (legacy_messages,),
+                )
+                await db.execute(
+                    """
+                    INSERT OR REPLACE INTO config (key, value, updated_at)
+                    VALUES ('rtklib_outbound_messages', ?, datetime('now'))
+                    """,
+                    (legacy_messages,),
+                )
+
         await db.commit()
 
 
