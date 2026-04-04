@@ -15,7 +15,7 @@ from .rtcm_fanout import RTCMFanout
 from .rtcm import build_rtcm_1006, parse_rtcm_message_type
 from .serial_reader import SerialReader
 from .state import GNSSState
-from .ublox import UBloxBackend
+from .ublox import UBX_MON_CLASS, UBX_MON_VER_ID, UBloxBackend
 
 logger = logging.getLogger("survey365.gnss.manager")
 
@@ -53,6 +53,7 @@ class GNSSManager:
         self._running = False
         self._reconnect_delay = 2.0
         self._rtcm_engine = "native"
+        self._active_output_engine: str | None = None  # set by start_base, used by stop_base
         self._synthetic_reference_frame: bytes | None = None
         self._last_reference_injected_at = 0.0
         self._last_native_reference_seen_at = 0.0
@@ -213,6 +214,12 @@ class GNSSManager:
         except Exception as exc:
             logger.warning("Antenna voltage config failed (may already be set): %s", exc)
 
+        # Schedule MON-VER identity poll as a background task so the response
+        # is picked up by the frame-consuming loop below.
+        mon_ver_task = None
+        if hasattr(self.backend, "poll_mon_ver"):
+            mon_ver_task = asyncio.create_task(self._delayed_mon_ver_poll())
+
         try:
             async for frame_type, frame_data in self.serial_reader.frames():
                 if frame_type == "ubx":
@@ -233,6 +240,8 @@ class GNSSManager:
                         await self.rtcm_fanout.broadcast(frame_data)
                 # NMEA frames ignored for now (UBX provides everything we need)
         finally:
+            if mon_ver_task is not None and not mon_ver_task.done():
+                mon_ver_task.cancel()
             await self.serial_reader.close()
             await self.state.set_connected(False)
 
@@ -282,7 +291,19 @@ class GNSSManager:
         )
 
     def receiver_descriptor(self) -> str:
-        return f"RTKBase {self.backend.receiver_model},Survey365 {self.backend.receiver_firmware}"
+        """RTKBase-style descriptor: RTKBase {model},{version} {firmware}."""
+        from ..version import __version__
+        return f"RTKBase {self.backend.receiver_model},{__version__} {self.backend.receiver_firmware}"
+
+    async def _delayed_mon_ver_poll(self):
+        """Poll MON-VER after a short delay so the frame loop is running."""
+        try:
+            await asyncio.sleep(1.0)  # let the frame loop start consuming
+            await self.backend.poll_mon_ver(self.serial_reader)
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            logger.warning("MON-VER poll failed: %s", exc)
 
     def _handle_raw_chunk(self, data: bytes) -> None:
         loop = self.serial_reader._loop
@@ -299,11 +320,25 @@ class GNSSManager:
             return False
         msg_class = data[2]
         msg_id = data[3]
-        return msg_class == 0x01 and msg_id in {0x07, 0x35}
+        # NAV-PVT and NAV-SAT always queued
+        if msg_class == 0x01 and msg_id in {0x07, 0x35}:
+            return True
+        # Always allow MON-VER through — it is a rare one-shot response and
+        # gating on the cross-thread _mon_ver_pending flag caused an
+        # intermittent race where the response was discarded before the flag
+        # propagated to the serial-reader thread.
+        if msg_class == UBX_MON_CLASS and msg_id == UBX_MON_VER_ID:
+            return True
+        return False
 
-    @staticmethod
-    def _should_process_ubx_message(msg_class: int, msg_id: int) -> bool:
-        return msg_class == 0x01 and msg_id in {0x07, 0x35}
+    def _should_process_ubx_message(self, msg_class: int, msg_id: int) -> bool:
+        # Always allow NAV-PVT and NAV-SAT
+        if msg_class == 0x01 and msg_id in {0x07, 0x35}:
+            return True
+        # Always allow MON-VER (see _should_queue_frame comment)
+        if msg_class == UBX_MON_CLASS and msg_id == UBX_MON_VER_ID:
+            return True
+        return False
 
 
 # Module-level singleton

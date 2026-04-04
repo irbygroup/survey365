@@ -1,0 +1,4 @@
+# Dev/test dependencies — not installed on the Pi in production
+-r requirements.txt
+pytest>=8.0
+pytest-asyncio>=0.24

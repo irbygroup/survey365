@@ -46,15 +46,25 @@ async def start_base(
     rtcm_engine = (await get_config("rtcm_engine") or "native").strip().lower()
     if rtcm_engine == "rtklib":
         await _start_base_rtklib(manager, lat, lon, height, outputs)
+        manager._active_output_engine = "rtklib"
         return
 
     await _start_base_native(manager, lat, lon, height, outputs)
+    manager._active_output_engine = "native"
 
 
 async def stop_base(manager: GNSSManager):
-    """Stop the active base output stack and return receiver to rover mode."""
-    rtcm_engine = (await get_config("rtcm_engine") or "native").strip().lower()
-    if rtcm_engine == "rtklib":
+    """Stop the active base output stack and return receiver to rover mode.
+
+    Uses the engine that was *actually started* (manager._active_output_engine)
+    rather than the current DB config, so a config change while running cannot
+    break teardown.
+    """
+    active_engine = manager._active_output_engine or (
+        (await get_config("rtcm_engine") or "native").strip().lower()
+    )
+
+    if active_engine == "rtklib":
         if manager.local_caster_proxy is not None:
             await manager.local_caster_proxy.close()
             manager.local_caster_proxy = None
@@ -66,9 +76,20 @@ async def stop_base(manager: GNSSManager):
         clear_active_base_config()
         reset_rtklib_service_state()
     else:
+        # Native mode: clear fanout (closes caster, push, logger)
         await manager.rtcm_fanout.clear_outputs()
+        if manager.local_caster_proxy is not None:
+            # Already closed by clear_outputs if it was in the fanout,
+            # but clear the reference regardless.
+            manager.local_caster_proxy = None
+        # Explicitly disable native RTCM output on the receiver
+        try:
+            await manager.backend.disable_rtcm_output(manager.serial_reader)
+        except Exception as exc:
+            logger.warning("Failed disabling native RTCM output: %s", exc)
 
     manager.clear_base_reference()
+    manager._active_output_engine = None
     try:
         await manager.configure_rover()
     except Exception as exc:
@@ -88,7 +109,22 @@ async def _start_base_rtklib(
     rtklib_local_messages = await get_config("rtklib_local_messages") or RTKBASE_MESSAGE_DEFAULT
     rtklib_outbound_messages = await get_config("rtklib_outbound_messages") or RTKBASE_MESSAGE_DEFAULT
     local_enabled = "local_caster" in outputs
-    outbound_profile = await _get_ntrip_profile("outbound_caster") if "ntrip_push" in outputs else None
+    outbound_profile = None
+    if "ntrip_push" in outputs:
+        outbound_profile = await _get_ntrip_profile("outbound_caster")
+        if outbound_profile is not None:
+            # Validate required outbound fields
+            missing = []
+            if not (outbound_profile.get("host") or "").strip():
+                missing.append("host")
+            if not (outbound_profile.get("mountpoint") or "").strip():
+                missing.append("mountpoint")
+            if missing:
+                logger.warning(
+                    "Outbound NTRIP profile incomplete (missing %s); skipping outbound",
+                    ", ".join(missing),
+                )
+                outbound_profile = None
     log_enabled = "rinex" in outputs
     local_caster_port = int(await get_config("local_caster_port") or "2101")
     local_caster_mountpoint = await get_config("local_caster_mountpoint") or "SURVEY365"
@@ -98,8 +134,14 @@ async def _start_base_rtklib(
 
     await manager.configure_base(lat, lon, height, rtcm_message_spec=None)
 
+    from ..version import __version__ as survey365_version
+
     runtime = {
+        "survey365_version": survey365_version,
+        "active_mode": "base",
+        "rtcm_engine": "rtklib",
         "raw_relay_port": RAW_RELAY_PORT,
+        "external_local_caster_port": local_caster_port if local_enabled else None,
         "trace_level": 0,
         "position": {
             "lat": lat,
@@ -115,7 +157,7 @@ async def _start_base_rtklib(
                 "messages": rtklib_local_messages,
                 "internal_port": LOCAL_CASTER_INTERNAL_PORT,
                 "receiver_frequency_count": "2",
-                "receiver_label": "RTKBase_ZED-F9P,Survey365",
+                "receiver_label": manager.receiver_descriptor().replace(" ", "_"),
                 "username": "",
                 "password": "",
             },
@@ -217,9 +259,10 @@ async def _start_base_native(
         caster = NTRIPCaster(
             port=caster_port,
             mountpoint=caster_mount,
-            upstream_port=LOCAL_CASTER_INTERNAL_PORT,
+            upstream_port=None,  # native direct-broadcast mode
         )
         await caster.start()
+        manager.rtcm_fanout.add_output(caster)  # caster receives RTCM via fanout
         manager.local_caster_proxy = caster
 
     output_names = [o.name for o in manager.rtcm_fanout.outputs]

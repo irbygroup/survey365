@@ -16,3 +16,4 @@ base-station/gnss-data/
 
 # macOS
 .DS_Store
+.venv-test/

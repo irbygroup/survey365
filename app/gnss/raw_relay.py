@@ -69,15 +69,39 @@ class RawRelay:
             await self._broadcast(data)
 
     async def _broadcast(self, data: bytes) -> None:
+        """Write data to all clients, then drain all at once.
+
+        Uses a write-all-then-drain pattern so one slow client does not
+        block writes to the others.  Expected consumer count is <=3
+        (local caster, outbound, log) so this is sufficient.
+        """
         dead: list[asyncio.StreamWriter] = []
+        # Phase 1: buffer the write to every client (non-blocking)
         for writer in list(self._clients):
             try:
                 writer.write(data)
-                await writer.drain()
             except Exception:
                 dead.append(writer)
+        # Phase 2: drain all clients concurrently
+        drain_tasks = []
+        for writer in list(self._clients):
+            if writer in dead:
+                continue
+            drain_tasks.append(self._drain_or_mark_dead(writer, dead))
+        if drain_tasks:
+            await asyncio.gather(*drain_tasks)
         for writer in dead:
             await self._close_client(writer)
+
+    @staticmethod
+    async def _drain_or_mark_dead(
+        writer: asyncio.StreamWriter,
+        dead: list[asyncio.StreamWriter],
+    ) -> None:
+        try:
+            await asyncio.wait_for(writer.drain(), timeout=2.0)
+        except Exception:
+            dead.append(writer)
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         peer = writer.get_extra_info("peername")

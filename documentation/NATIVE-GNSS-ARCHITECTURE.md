@@ -1,6 +1,8 @@
 # Survey365 Native GNSS Architecture
 
-Survey365 owns the GNSS receiver directly, but RTKLIB now owns base-station correction encoding and publishing. The app reads the receiver over `/dev/ttyGNSS`, configures base/rover behavior natively, relays raw UBX bytes on localhost, and uses RTKLIB `str2str` services for local casting, remote push, and raw logging.
+Survey365 owns the GNSS receiver directly, but RTKLIB now owns base-station correction encoding and publishing (when `rtcm_engine=rtklib`, the default). The app reads the receiver over `/dev/ttyGNSS`, polls receiver identity at startup via MON-VER, configures base/rover behavior natively, relays raw UBX bytes on localhost, and uses RTKLIB `str2str` services for local casting, remote push, and raw logging.
+
+A native fallback mode (`rtcm_engine=native`) is preserved for one-release compatibility. In native mode the F9P generates RTCM3 directly, the local caster broadcasts via rtcm_fanout (no upstream proxy), and RTKLIB is not involved.
 
 ## Components
 
@@ -17,7 +19,7 @@ Survey365 owns the GNSS receiver directly, but RTKLIB now owns base-station corr
 - `app/gnss/base_station.py`:
   Starts and stops base mode, writes the active RTKLIB runtime config, starts/stops RTKLIB systemd units, and manages the local caster proxy.
 - `app/gnss/ntrip_caster.py`:
-  Proxies the RTKLIB internal local caster so client requests, bytes, and inbound GGA/NMEA remain visible in the admin API.
+  Dual-mode NTRIP caster: in RTKLIB mode proxies the internal local caster; in native mode acts as a direct-broadcast RTCMOutput attached to rtcm_fanout. Both modes share session bookkeeping, GGA capture, and the admin API shape.
 - `app/rtklib/runtime.py`:
   Stores the active base/session runtime config under the writable data volume.
 - `app/rtklib/launcher.py`:
@@ -25,7 +27,9 @@ Survey365 owns the GNSS receiver directly, but RTKLIB now owns base-station corr
 - `app/gnss/ntrip_client.py`:
   Receives inbound CORS corrections for establish workflows. Sends GGA feedback for VRS casters.
 - `app/gnss/quectel.py`:
-  Stub backend reserved for future LG290P support.
+  Stub backend reserved for future LG290P support. Satisfies the full GNSSBackend contract with explicit NotImplementedError stubs.
+- `app/version.py`:
+  Application version (`__version__`) used in RTKLIB receiver descriptors and sourcetable metadata.
 
 ## Configuration
 
@@ -53,7 +57,7 @@ Remote caster and inbound correction endpoints live in the `ntrip_profiles` tabl
 ## Runtime Flow
 
 1. `GNSSManager.start()` loads DB-backed GNSS settings and opens the serial port.
-2. Startup config enables antenna voltage and begins parsing UBX navigation frames. Position, satellite, and fix data are written to `GNSSState`.
+2. Startup config enables antenna voltage, polls MON-VER for receiver identity, and begins parsing UBX navigation frames. Position, satellite, and fix data are written to `GNSSState`. The MON-VER response populates the receiver model and firmware used in RTKLIB metadata.
 3. When base mode starts (known-point or relative), Survey365 programs the receiver with fixed ellipsoid coordinates, disables native RTCM USB output, and enables the raw UBX messages RTKLIB needs.
 4. Survey365 writes an active runtime file and starts the needed RTKLIB systemd units.
 5. RTKLIB `str2str` instances read `tcpcli://127.0.0.1:5015#ubx` and emit:
