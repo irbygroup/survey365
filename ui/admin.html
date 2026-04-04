@@ -513,19 +513,22 @@
             Broadcast coordinates use the site's ellipsoid height. NAVD88 and orthometric elevations remain display-only.
           </p>
 
-          <h3 class="s365-admin-subheading">RTCM Outputs</h3>
+          <h3 class="s365-admin-subheading">Data Logging</h3>
           <label class="s365-checkbox-row" for="cfg-rinex-enabled">
             <input type="checkbox" id="cfg-rinex-enabled" name="cfg_rinex_enabled" x-model="config.rinex_enabled">
-            Enable raw RTCM logging
+            Enable raw GNSS logging
           </label>
+          <p class="s365-section-note">
+            When enabled, RTKLIB writes raw UBX receiver data to timestamped files for post-processing. Files rotate at the configured interval.
+          </p>
 
           <div class="s365-form-grid s365-form-grid-2">
             <div>
-              <label for="cfg-rinex-rotate">RINEX Rotate Hours</label>
+              <label for="cfg-rinex-rotate">Log Rotate Hours</label>
               <input type="number" id="cfg-rinex-rotate" name="cfg_rinex_rotate_hours" x-model="config.rinex_rotate_hours" min="1" step="1">
             </div>
             <div>
-              <label for="cfg-rinex-dir">RINEX Data Dir</label>
+              <label for="cfg-rinex-dir">Log Data Dir</label>
               <input type="text" id="cfg-rinex-dir" name="cfg_rinex_data_dir" x-model="config.rinex_data_dir" placeholder="data/rinex">
             </div>
           </div>

@@ -232,10 +232,12 @@ sudo reboot
 - Logging is written beside the active database when `SURVEY365_DB` is set.
 - `scripts/setup-wifi.sh` creates managed `rtk-*` NetworkManager profiles on both adapters.
 - `wlan1` gets the lower metric; `wlan0` gets `metric + 550`.
-- Survey365 still owns `/dev/ttyGNSS`, parses live UBX navigation messages, and serves the UI/API.
-- RTKLIB consumes a localhost raw UBX relay on `127.0.0.1:5015` and generates all base correction outputs.
+- Survey365 still owns `/dev/ttyGNSS`, parses live UBX navigation messages, polls receiver identity (MON-VER) at startup, and serves the UI/API.
+- RTKLIB consumes a localhost raw UBX relay on `127.0.0.1:5015` and generates all base correction outputs (default engine: `rtklib`).
 - The external local caster is proxied by Survey365 for rover/GGA visibility; RTKLIB serves the internal caster on port `2110`.
+- Native fallback mode (`rtcm_engine=native`) is preserved for one-release compatibility — the local caster serves RTCM directly via rtcm_fanout.
 - Outbound source pushes use password-only auth in the RTKLIB command line; stored NTRIP usernames are retained for compatibility but not used by the push process.
+- RTKLIB service state is cached in-memory and reconciled against real systemd state every 20 seconds. No synchronous systemctl polling on the hot request path.
 
 ## Development Notes
 
