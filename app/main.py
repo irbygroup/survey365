@@ -94,12 +94,23 @@ async def lifespan(app: FastAPI):
     # Start WebSocket status broadcast
     ws_live.start_broadcast()
 
+    # Start background RTKLIB service-state reconciliation
+    from .systemd import start_reconciliation
+    start_reconciliation()
+
     logger.info("Survey365 ready")
 
     yield
 
     # --- Shutdown ---
     logger.info("Survey365 shutting down...")
+
+    # Stop RTKLIB service-state reconciliation
+    from .systemd import stop_reconciliation
+    try:
+        await stop_reconciliation()
+    except Exception:
+        logger.exception("Failed stopping reconciliation")
 
     # Stop WebSocket broadcast
     try:
