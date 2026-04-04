@@ -4,6 +4,7 @@ Helpers for interacting with systemd-managed services.
 
 import asyncio
 import logging
+import subprocess
 from dataclasses import dataclass
 
 logger = logging.getLogger("survey365.systemd")
@@ -41,19 +42,29 @@ class RTKLIBServiceState:
 _rtklib_service_state = RTKLIBServiceState()
 
 
-async def run_command(*args: str, timeout: float = 20.0) -> CommandResult:
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+def _run_command_sync(*args: str, timeout: float = 20.0) -> CommandResult:
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.communicate()
+        proc = subprocess.run(
+            args,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
         return CommandResult(124, "", "command timed out")
-    return CommandResult(proc.returncode, stdout.decode().strip(), stderr.decode().strip())
+    return CommandResult(proc.returncode, proc.stdout.strip(), proc.stderr.strip())
+
+
+async def run_command(*args: str, timeout: float = 20.0) -> CommandResult:
+    """Run a command off the event loop.
+
+    Using asyncio.create_subprocess_exec() from the uvloop event-loop thread was
+    observed to block request handling intermittently while spawning systemctl.
+    Run subprocesses in a worker thread instead so status reconciliation and
+    service management never stall the hot HTTP path.
+    """
+    return await asyncio.to_thread(_run_command_sync, *args, timeout=timeout)
 
 
 async def systemctl_state(name: str) -> str:
@@ -128,8 +139,8 @@ async def _reconcile_loop() -> None:
     """
     while True:
         try:
-            await asyncio.sleep(_RECONCILE_INTERVAL)
             await reconcile_rtklib_state()
+            await asyncio.sleep(_RECONCILE_INTERVAL)
         except asyncio.CancelledError:
             break
         except Exception:
@@ -137,22 +148,27 @@ async def _reconcile_loop() -> None:
 
 
 async def reconcile_rtklib_state() -> None:
-    """One-shot: compare cached state with real systemd state and correct drift."""
+    """One-shot: reconcile cached service flags with real systemd state.
+
+    This corrects drift in both directions:
+    - cached active -> real inactive
+    - cached inactive -> real active
+    """
     for service, field in (
         (RTKLIB_LOCAL_CASTER_SERVICE, "local_caster"),
         (RTKLIB_OUTBOUND_SERVICE, "outbound"),
         (RTKLIB_LOG_SERVICE, "log"),
     ):
         cached = getattr(_rtklib_service_state, field)
-        if cached:
-            # We think this service is running — verify
-            real_active = await systemctl_is_active(service)
-            if not real_active:
-                logger.info(
-                    "Reconciliation: %s was cached as active but systemd says inactive; correcting",
-                    service,
-                )
-                setattr(_rtklib_service_state, field, False)
+        real_active = await systemctl_is_active(service)
+        if cached != real_active:
+            logger.info(
+                "Reconciliation: %s cached=%s real=%s; correcting",
+                service,
+                cached,
+                real_active,
+            )
+            setattr(_rtklib_service_state, field, real_active)
 
 
 def start_reconciliation() -> None:

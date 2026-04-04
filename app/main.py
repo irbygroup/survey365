@@ -112,9 +112,9 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Failed stopping reconciliation")
 
-    # Stop WebSocket broadcast
+    # Stop WebSocket broadcast and actively close live websocket clients
     try:
-        await asyncio.wait_for(ws_live.stop_broadcast(), timeout=2.0)
+        await asyncio.wait_for(ws_live.stop_broadcast(), timeout=5.0)
     except TimeoutError:
         logger.error("Timed out stopping WebSocket broadcast")
     except Exception:

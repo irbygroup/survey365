@@ -38,6 +38,24 @@ async def broadcast_event(event: dict):
 _broadcast_task: asyncio.Task | None = None
 
 
+async def close_all_clients() -> None:
+    """Actively close all live websocket clients.
+
+    Without this, websocket handlers can remain blocked in ws.receive() during
+    app shutdown and delay uvicorn/systemd stop until the service is SIGKILLed.
+    """
+    if not _clients:
+        return
+    clients = list(_clients)
+    _clients.clear()
+    for ws in clients:
+        try:
+            if ws.client_state == WebSocketState.CONNECTED:
+                await ws.close()
+        except Exception:
+            pass
+
+
 async def _status_broadcast_loop():
     """Background loop: broadcast GNSS status to all clients every 1 second."""
 
@@ -86,6 +104,7 @@ async def stop_broadcast():
             pass
         _broadcast_task = None
         logger.info("WebSocket status broadcast stopped")
+    await close_all_clients()
 
 
 @router.websocket("/ws/live")

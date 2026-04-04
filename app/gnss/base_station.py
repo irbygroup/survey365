@@ -38,14 +38,21 @@ async def start_base(
     lon: float,
     height: float,
     outputs: list[str] | None = None,
+    *,
+    mode: str = "base",
 ):
     """Configure the receiver as a base and start the enabled output stack."""
     if outputs is None:
         outputs = await _resolve_outputs()
 
     rtcm_engine = (await get_config("rtcm_engine") or "native").strip().lower()
-    if rtcm_engine == "rtklib":
-        await _start_base_rtklib(manager, lat, lon, height, outputs)
+    # Keep the manager's runtime engine in sync with the engine we are
+    # actually about to start so configure_base()/configure_rover() do not use
+    # stale startup-time config.
+    manager._rtcm_engine = rtcm_engine if rtcm_engine in {"native", "rtklib"} else "native"
+
+    if manager._rtcm_engine == "rtklib":
+        await _start_base_rtklib(manager, lat, lon, height, outputs, mode=mode)
         manager._active_output_engine = "rtklib"
         return
 
@@ -63,6 +70,7 @@ async def stop_base(manager: GNSSManager):
     active_engine = manager._active_output_engine or (
         (await get_config("rtcm_engine") or "native").strip().lower()
     )
+    manager._rtcm_engine = active_engine if active_engine in {"native", "rtklib"} else "native"
 
     if active_engine == "rtklib":
         if manager.local_caster_proxy is not None:
@@ -104,6 +112,8 @@ async def _start_base_rtklib(
     lon: float,
     height: float,
     outputs: list[str],
+    *,
+    mode: str,
 ) -> None:
     reset_rtklib_service_state()
     rtklib_local_messages = await get_config("rtklib_local_messages") or RTKBASE_MESSAGE_DEFAULT
@@ -138,7 +148,7 @@ async def _start_base_rtklib(
 
     runtime = {
         "survey365_version": survey365_version,
-        "active_mode": "base",
+        "active_mode": mode,
         "rtcm_engine": "rtklib",
         "raw_relay_port": RAW_RELAY_PORT,
         "external_local_caster_port": local_caster_port if local_enabled else None,
