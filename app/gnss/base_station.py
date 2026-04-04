@@ -46,15 +46,25 @@ async def start_base(
     rtcm_engine = (await get_config("rtcm_engine") or "native").strip().lower()
     if rtcm_engine == "rtklib":
         await _start_base_rtklib(manager, lat, lon, height, outputs)
+        manager._active_output_engine = "rtklib"
         return
 
     await _start_base_native(manager, lat, lon, height, outputs)
+    manager._active_output_engine = "native"
 
 
 async def stop_base(manager: GNSSManager):
-    """Stop the active base output stack and return receiver to rover mode."""
-    rtcm_engine = (await get_config("rtcm_engine") or "native").strip().lower()
-    if rtcm_engine == "rtklib":
+    """Stop the active base output stack and return receiver to rover mode.
+
+    Uses the engine that was *actually started* (manager._active_output_engine)
+    rather than the current DB config, so a config change while running cannot
+    break teardown.
+    """
+    active_engine = manager._active_output_engine or (
+        (await get_config("rtcm_engine") or "native").strip().lower()
+    )
+
+    if active_engine == "rtklib":
         if manager.local_caster_proxy is not None:
             await manager.local_caster_proxy.close()
             manager.local_caster_proxy = None
@@ -66,9 +76,20 @@ async def stop_base(manager: GNSSManager):
         clear_active_base_config()
         reset_rtklib_service_state()
     else:
+        # Native mode: clear fanout (closes caster, push, logger)
         await manager.rtcm_fanout.clear_outputs()
+        if manager.local_caster_proxy is not None:
+            # Already closed by clear_outputs if it was in the fanout,
+            # but clear the reference regardless.
+            manager.local_caster_proxy = None
+        # Explicitly disable native RTCM output on the receiver
+        try:
+            await manager.backend.disable_rtcm_output(manager.serial_reader)
+        except Exception as exc:
+            logger.warning("Failed disabling native RTCM output: %s", exc)
 
     manager.clear_base_reference()
+    manager._active_output_engine = None
     try:
         await manager.configure_rover()
     except Exception as exc:
@@ -217,9 +238,10 @@ async def _start_base_native(
         caster = NTRIPCaster(
             port=caster_port,
             mountpoint=caster_mount,
-            upstream_port=LOCAL_CASTER_INTERNAL_PORT,
+            upstream_port=None,  # native direct-broadcast mode
         )
         await caster.start()
+        manager.rtcm_fanout.add_output(caster)  # caster receives RTCM via fanout
         manager.local_caster_proxy = caster
 
     output_names = [o.name for o in manager.rtcm_fanout.outputs]

@@ -1,9 +1,16 @@
 """
-Local NTRIP caster proxy for RTKLIB's internal local caster.
+Local NTRIP caster with two explicit runtime modes.
 
-Survey365 keeps the external LAN-facing socket so rover metadata and GGA traffic
-remain visible in the admin API, while RTKLIB remains the encoder and upstream
-stream source.
+Mode 1 — Native direct-broadcast (upstream_port=None):
+    Survey365 feeds RTCM3 frames via the write() method (RTCMOutput protocol).
+    Connected rovers receive those frames directly.
+
+Mode 2 — RTKLIB proxy (upstream_port=int):
+    Survey365 reverse-proxies the RTKLIB internal caster so rover metadata
+    and GGA traffic remain visible in the admin API.
+
+Both modes share client-session bookkeeping: request capture, header capture,
+bytes in/out, incoming NMEA/GGA parsing, and session history.
 """
 
 import asyncio
@@ -20,7 +27,15 @@ MAX_CAPTURE_NMEA = 100
 
 
 class NTRIPCaster:
-    """Transparent reverse proxy for an internal RTKLIB NTRIP caster."""
+    """NTRIP caster: native direct-broadcast or RTKLIB reverse-proxy.
+
+    When ``upstream_port`` is ``None`` the caster runs in **native direct
+    mode** — it implements the ``RTCMOutput`` protocol and can be added to
+    ``rtcm_fanout``.  RTCM3 frames arrive via ``write()``.
+
+    When ``upstream_port`` is an ``int`` the caster runs in **proxy mode** —
+    it reverse-proxies the internal RTKLIB caster on that port.
+    """
 
     name: str = "local_caster"
 
@@ -29,12 +44,12 @@ class NTRIPCaster:
         port: int = 2101,
         mountpoint: str = "SURVEY365",
         upstream_host: str = "127.0.0.1",
-        upstream_port: int = 2110,
+        upstream_port: int | None = 2110,
     ):
         self._port = port
         self._mountpoint = mountpoint
         self._upstream_host = upstream_host
-        self._upstream_port = upstream_port
+        self._upstream_port = upstream_port  # None => native direct mode
         self._server: asyncio.Server | None = None
         self._running = False
         self._bytes_served = 0
@@ -44,47 +59,92 @@ class NTRIPCaster:
         self._upstream_active = False
         self._last_proxy_error: str | None = None
 
-    async def start(self):
-        self._running = True
-        self._server = await asyncio.start_server(self._handle_client, "0.0.0.0", self._port)
-        logger.info(
-            "Local NTRIP proxy listening on port %d -> %s:%d/%s",
-            self._port,
-            self._upstream_host,
-            self._upstream_port,
-            self._mountpoint,
-        )
+        # Native direct-broadcast state
+        self._native_writers: set[asyncio.StreamWriter] = set()
+
+    @property
+    def is_proxy_mode(self) -> bool:
+        return self._upstream_port is not None
+
+    # ── RTCMOutput protocol (native mode only) ───────────────────────────
+
+    async def write(self, data: bytes) -> None:
+        """Broadcast RTCM3 data to connected native-mode clients."""
+        if self.is_proxy_mode or not self._running:
+            return
+        dead: list[asyncio.StreamWriter] = []
+        for writer in list(self._native_writers):
+            try:
+                writer.write(data)
+                await writer.drain()
+                session = self._client_sessions.get(writer)
+                if session is not None:
+                    session["bytes_served"] += len(data)
+                self._bytes_served += len(data)
+            except Exception:
+                dead.append(writer)
+        for writer in dead:
+            await self._close_client(writer)
 
     async def close(self) -> None:
+        """Shutdown the caster (works in both modes)."""
         self._running = False
         for writer in list(self._client_sessions):
             await self._close_client(writer)
+        self._native_writers.clear()
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
-        logger.info("Local NTRIP proxy stopped")
+        logger.info("Local NTRIP caster stopped (mode=%s)",
+                     "proxy" if self.is_proxy_mode else "native")
+
+    # ── Lifecycle ─────────────────────────────────────────────────────────
+
+    async def start(self):
+        self._running = True
+        self._server = await asyncio.start_server(self._handle_client, "0.0.0.0", self._port)
+        if self.is_proxy_mode:
+            logger.info(
+                "Local NTRIP proxy listening on port %d -> %s:%d/%s",
+                self._port,
+                self._upstream_host,
+                self._upstream_port,
+                self._mountpoint,
+            )
+        else:
+            logger.info(
+                "Local NTRIP caster listening on port %d (native direct mode, mountpoint=%s)",
+                self._port,
+                self._mountpoint,
+            )
+
+    # ── Snapshots / API ──────────────────────────────────────────────────
 
     def snapshot_clients(self) -> dict:
         active = [self._snapshot_session(session) for session in self._client_sessions.values()]
         recent = [self._snapshot_session(session) for session in self._session_history]
         return {
-            "running": self._running and self._upstream_active,
+            "running": self._running and (
+                self._upstream_active if self.is_proxy_mode else True
+            ),
             "port": self._port,
             "mountpoint": self._mountpoint,
             "bytes_served": self._bytes_served,
             "active_clients": active,
             "recent_clients": recent,
-            "upstream_active": self._upstream_active,
+            "upstream_active": self._upstream_active if self.is_proxy_mode else False,
             "upstream_port": self._upstream_port,
             "last_proxy_error": self._last_proxy_error,
         }
+
+    # ── Client handling ──────────────────────────────────────────────────
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         peer = writer.get_extra_info("peername", ("unknown", 0))
         session = self._new_session(peer)
         self._client_sessions[writer] = session
-        logger.info("NTRIP proxy client connected from %s:%d", peer[0], peer[1])
+        logger.info("NTRIP caster client connected from %s:%d", peer[0], peer[1])
 
         try:
             request_line = await asyncio.wait_for(reader.readline(), timeout=10.0)
@@ -119,11 +179,17 @@ class NTRIPCaster:
                 return
 
             if path == "/":
-                await self._proxy_source_table(writer)
+                if self.is_proxy_mode:
+                    await self._proxy_source_table(writer)
+                else:
+                    await self._native_source_table(writer)
                 return
 
             if path.lstrip("/") == self._mountpoint:
-                await self._proxy_stream(reader, writer, headers, session)
+                if self.is_proxy_mode:
+                    await self._proxy_stream(reader, writer, headers, session)
+                else:
+                    await self._native_stream(reader, writer, session)
                 return
 
             await self._send_error(writer, 404, "Not Found")
@@ -131,9 +197,54 @@ class NTRIPCaster:
             self._last_proxy_error = "client handshake timed out"
         except Exception as exc:
             self._last_proxy_error = str(exc)
-            logger.debug("NTRIP proxy client error: %s", exc, exc_info=True)
+            logger.debug("NTRIP caster client error: %s", exc, exc_info=True)
         finally:
             await self._close_client(writer)
+
+    # ── Native direct-broadcast helpers ──────────────────────────────────
+
+    async def _native_source_table(self, writer: asyncio.StreamWriter) -> None:
+        """Serve a minimal NTRIP source table in native mode."""
+        table_line = f"STR;{self._mountpoint};Survey365;RTCM 3.x;;2;GPS+GLO+GAL+BDS;NONE;NONE;0;0;Survey365;NONE;N;N;;\r\n"
+        body = table_line + "ENDSOURCETABLE\r\n"
+        header = (
+            "SOURCETABLE 200 OK\r\n"
+            f"Content-Length: {len(body)}\r\n"
+            "Content-Type: text/plain\r\n"
+            "\r\n"
+        )
+        writer.write((header + body).encode("ascii", errors="replace"))
+        await writer.drain()
+
+    async def _native_stream(
+        self,
+        client_reader: asyncio.StreamReader,
+        client_writer: asyncio.StreamWriter,
+        session: dict,
+    ) -> None:
+        """Stream RTCM3 to a rover client in native mode."""
+        # Send ICY 200 OK response (NTRIP 1.0)
+        client_writer.write(b"ICY 200 OK\r\n\r\n")
+        await client_writer.drain()
+
+        session["streaming"] = True
+        session["streaming_started_at"] = _utc_now()
+        self._native_writers.add(client_writer)
+
+        try:
+            # Read inbound data (GGA feedback) from the rover
+            while self._running:
+                try:
+                    data = await asyncio.wait_for(client_reader.read(4096), timeout=1.0)
+                except asyncio.TimeoutError:
+                    continue
+                if not data:
+                    break
+                self._capture_incoming(session, data)
+        finally:
+            self._native_writers.discard(client_writer)
+
+    # ── RTKLIB proxy helpers ─────────────────────────────────────────────
 
     async def _proxy_source_table(self, writer: asyncio.StreamWriter) -> None:
         upstream_reader, upstream_writer = await self._open_upstream("/")
@@ -240,11 +351,14 @@ class NTRIPCaster:
         await upstream_writer.drain()
         return upstream_reader, upstream_writer
 
+    # ── Shared helpers ───────────────────────────────────────────────────
+
     async def _send_error(self, writer: asyncio.StreamWriter, code: int, message: str):
         writer.write(f"HTTP/1.1 {code} {message}\r\n\r\n".encode())
         await writer.drain()
 
     async def _close_client(self, writer: asyncio.StreamWriter) -> None:
+        self._native_writers.discard(writer)
         session = self._client_sessions.pop(writer, None)
         if session is not None:
             session["disconnected_at"] = _utc_now()
