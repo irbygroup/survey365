@@ -119,8 +119,14 @@ async def _start_base_rtklib(
 
     await manager.configure_base(lat, lon, height, rtcm_message_spec=None)
 
+    from ..version import __version__ as survey365_version
+
     runtime = {
+        "survey365_version": survey365_version,
+        "active_mode": "base",
+        "rtcm_engine": "rtklib",
         "raw_relay_port": RAW_RELAY_PORT,
+        "external_local_caster_port": local_caster_port if local_enabled else None,
         "trace_level": 0,
         "position": {
             "lat": lat,
