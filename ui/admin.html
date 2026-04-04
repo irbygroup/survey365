@@ -770,8 +770,7 @@
             this._loadNtrip();
             this._loadWifi();
             this._loadConfig();
-            await this.loadUpdateStatus();
-            this._scheduleUpdatePoll();
+            this.loadUpdateStatus();
           }
         },
 
@@ -1234,8 +1233,10 @@
         async loadUpdateStatus() {
           this.updateLoading = true;
           this.updateError = '';
+          var controller = new AbortController();
+          var timeoutId = setTimeout(() => controller.abort(), 8000);
           try {
-            var res = await fetch('/api/system/update-status');
+            var res = await fetch('/api/system/update-status', { signal: controller.signal });
             if (res.ok) {
               this.updateStatus = await res.json();
             } else {
@@ -1244,7 +1245,11 @@
               this.updateError = err.detail || err.error || 'Failed to load update status.';
             }
           } catch (err) {
-            this.updateError = 'Network error: ' + err.message;
+            this.updateError = err.name === 'AbortError'
+              ? 'Update status check timed out.'
+              : 'Network error: ' + err.message;
+          } finally {
+            clearTimeout(timeoutId);
           }
           this.updateLoading = false;
           this._scheduleUpdatePoll();
