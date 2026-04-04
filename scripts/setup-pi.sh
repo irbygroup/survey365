@@ -105,7 +105,7 @@ install_rtklib() {
     fi
 
     info "Building RTKLIB str2str from pinned source (${version})..."
-    tmpdir="$(mktemp -d)"
+    tmpdir="$(mktemp -d /var/tmp/survey365-rtklib.XXXXXX)"
     srcdir="$tmpdir/RTKLIB-2.5.0"
     curl -fsSL "$archive_url" | tar -xz -C "$tmpdir"
     make --directory="$srcdir/app/consapp/str2str/gcc"
