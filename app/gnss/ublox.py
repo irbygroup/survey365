@@ -446,12 +446,22 @@ class UBloxBackend:
         logger.info("Disabled raw UBX measurement output")
 
     async def poll_mon_ver(self, serial_reader):
-        """Send a zero-payload MON-VER poll; response arrives via parse_frame."""
-        msg = _ubx_message(UBX_MON_CLASS, UBX_MON_VER_ID)
+        """Send a zero-payload MON-VER poll; response arrives via parse_frame.
+
+        Sets _mon_ver_pending before sending so the serial reader thread
+        allows the response through the UBX filter.
+        """
         self._mon_ver_pending = True
+        # Brief pause to let the serial reader thread see the flag
+        await asyncio.sleep(0.1)
+        msg = _ubx_message(UBX_MON_CLASS, UBX_MON_VER_ID)
         await serial_reader.write(msg)
         logger.info("Sent MON-VER poll")
-        await asyncio.sleep(0.5)
+        # Wait for the response — typically arrives within 100ms
+        for _ in range(10):
+            await asyncio.sleep(0.2)
+            if not self._mon_ver_pending:
+                break
 
     async def enable_antenna_voltage(self, serial_reader):
         """Enable antenna voltage, short detection, and open detection.
