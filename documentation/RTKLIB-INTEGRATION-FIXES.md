@@ -1,573 +1,1109 @@
-# RTKLIB Integration Fixes Plan
+# RTKLIB Integration Hardening Plan
 
-Post-merge fix plan for `feat/rtklib-output-integration`. This branch will be
-merged to `main` first, then a new `fix/rtklib-integration-hardening` branch
-implements all remaining bugs, gaps, and plan deviations identified during code
-review.
+## Purpose
+
+This document is the **post-merge hardening plan** for the RTKLIB output
+integration work currently on `feat/rtklib-output-integration`.
+
+The current PR gets the core architecture in place:
+
+- Survey365 still owns `/dev/ttyGNSS`
+- Survey365 still configures the receiver and serves status / mode APIs
+- raw receiver bytes are relayed on localhost for RTKLIB consumption
+- RTKLIB `str2str` now owns correction encoding / publishing
+- the external local caster is proxied so rover visibility and GGA capture stay
+  in Survey365
+- RTKLIB child units are systemd-managed and installer-managed
+
+That architectural direction is correct and should be preserved.
+
+However, code review found a number of **follow-up fixes** that should be done
+in a dedicated hardening branch rather than by continuing to pile changes onto
+this already-large feature branch.
+
+This plan therefore assumes:
+
+1. the current RTKLIB integration PR is merged first,
+2. the feature branch is cleaned up,
+3. a new focused hardening branch is created,
+4. all remaining bugs / design gaps / plan deviations are fixed there,
+5. the branch is repeatedly deployed and tested on the Pi until behavior is
+   stable,
+6. only then is a new PR opened for review.
 
 ---
 
-## Phase 1 — Merge and Branch
+## Scope
 
-### Step 1: Merge the current PR
+This hardening plan covers **all currently known follow-up issues** identified in
+review of the RTKLIB integration branch, including:
 
-```
+- broken native fallback behavior
+- backend interface gaps
+- receiver identity / descriptor gaps
+- service-state reporting correctness
+- output-engine state consistency
+- local-caster health semantics
+- runtime contract gaps
+- outbound validation gaps
+- parser robustness issues
+- installer / sudoers gaps
+- UI wording cleanup
+- documentation alignment
+- test coverage
+- deployment / field verification / fix-forward loop
+
+### Explicitly out of scope for this document
+
+- **Firewall work for port 2110**
+
+That topic is intentionally excluded from this plan per request. No tasks in
+this document should add, remove, or discuss the loopback-protection firewall
+rule.
+
+---
+
+## Why this should be a separate branch after merge
+
+The current PR already delivers the core topology shift:
+
+- receiver ownership stays in Survey365
+- RTKLIB becomes the encoder / publisher
+- local caster becomes proxy-backed
+- output units become systemd-managed
+
+That is the right architectural milestone.
+
+The remaining work is best treated as **hardening and completion**, not as a
+reason to keep the original branch open indefinitely. A clean follow-up branch
+will make it easier to:
+
+- isolate fix commits
+- test incrementally on the Pi
+- avoid rebasing a long-lived feature branch forever
+- make review of the hardening PR much easier
+- reduce risk while continuing iterative field validation
+
+---
+
+# Phase 0 — Merge, Clean Up, and Start Fresh
+
+## Step 0.1 — Merge the current RTKLIB integration PR first
+
+The first step is **not** to continue editing `feat/rtklib-output-integration`.
+Merge it as the baseline RTKLIB architecture.
+
+Suggested workflow:
+
+```bash
 git checkout main
-git merge feat/rtklib-output-integration
+git pull origin main
+git merge --no-ff feat/rtklib-output-integration
 git push origin main
 ```
 
-### Step 2: Clean up the feature branch
+If GitHub PR merge is used instead, that is fine too; the important thing is
+that `main` becomes the baseline for all hardening work.
 
-```
+## Step 0.2 — Clean up the old feature branch
+
+After merge:
+
+```bash
 git branch -d feat/rtklib-output-integration
 git push origin --delete feat/rtklib-output-integration
 ```
 
-### Step 3: Create the fix branch
+Only do this after confirming the merge is complete and `main` is up to date.
 
-```
+## Step 0.3 — Create the new hardening branch
+
+Create a fresh branch from updated `main`:
+
+```bash
+git checkout main
+git pull origin main
 git checkout -b fix/rtklib-integration-hardening
 git push -u origin fix/rtklib-integration-hardening
 ```
 
----
+All work described below happens on that new branch.
 
-## Phase 2 — Bug Fixes (P0 — Runtime Crash Risks)
+## Step 0.4 — Set the branch goal clearly
 
-### Fix 1: Broken native-fallback NTRIPCaster
+The hardening branch should have one simple success criterion:
 
-**Problem:**
-`NTRIPCaster` was fully refactored from an RTCM broadcaster (implementing the
-`RTCMOutput` protocol with a `write()` method) into a reverse proxy. The
-`write()` method was removed entirely. But `_start_base_native()` in
-`app/gnss/base_station.py` still creates an `NTRIPCaster` instance and points
-it at `upstream_port=2110`, where nothing is listening in native mode. It also
-assigns it to `manager.local_caster_proxy` instead of adding it to
-`manager.rtcm_fanout`, so even if upstream existed it wouldn't receive RTCM
-data. Anyone who sets `rtcm_engine=native` (the one-release rollback path) gets
-a completely non-functional local caster.
-
-**Fix — three parts:**
-
-1. **Restore a standalone broadcast-capable NTRIPCaster for native mode.**
-   Create a thin `NTRIPDirectCaster` class (or add a `mode` parameter to
-   `NTRIPCaster`) that keeps the old `write()` method and direct client
-   streaming behavior. This class implements the `RTCMOutput` protocol so
-   `rtcm_fanout` can call `write()` on it. Keep all existing client-capture
-   logic (session tracking, GGA parsing, NMEA capture) so the native path
-   retains full admin visibility.
-
-   Recommended approach: add an internal flag to `NTRIPCaster.__init__()`:
-   - `upstream_port=None` means direct-broadcast mode (native): the caster
-     serves its own sourcetable, implements `write()` for RTCM fanout, and
-     streams data directly to clients.
-   - `upstream_port=<int>` means proxy mode (RTKLIB): current proxy behavior.
-
-   This avoids duplicating the session-capture and NMEA/GGA parsing code across
-   two classes.
-
-2. **Fix `_start_base_native()` to use direct-broadcast mode.**
-   Create the `NTRIPCaster` with `upstream_port=None` (or omitted), pass
-   `latitude` and `longitude` for the sourcetable, and add it to
-   `manager.rtcm_fanout` as before. Also assign it to
-   `manager.local_caster_proxy` so `snapshot_clients()` works from both code
-   paths.
-
-3. **Fix `stop_base()` native path to also clear `manager.local_caster_proxy`.**
-   Currently the native `stop_base` path only calls
-   `manager.rtcm_fanout.clear_outputs()` but doesn't clear
-   `manager.local_caster_proxy`. After this fix, both paths must clear the
-   proxy reference.
-
-**Files:**
-- `app/gnss/ntrip_caster.py` — add direct-broadcast mode back
-- `app/gnss/base_station.py` — fix `_start_base_native()` and native
-  `stop_base()` path
-
-**Verification:**
-- Set `rtcm_engine=native` in the database.
-- Start a known-base session with `local_caster_enabled=true`.
-- Connect a rover to the external local caster port.
-- Verify the rover receives RTCM data.
-- Verify `/api/ntrip/local-caster/clients` shows the connected rover.
-- Stop the session and verify clean teardown.
+> When the branch is done, RTKLIB mode, native rollback mode, status APIs,
+> installer behavior, metadata generation, UI wording, and test coverage all
+> match the intended design and are verified on the Pi.
 
 ---
 
-### Fix 2: QuectelBackend missing methods and attributes
+# Phase 1 — Consolidated Issue Inventory
 
-**Problem:**
-`GNSSManager.configure_base()` calls `self.backend.enable_raw_output()` and
-`configure_rover()` calls `self.backend.disable_raw_output()` when
-`rtcm_engine=rtklib`. `receiver_descriptor()` reads
-`self.backend.receiver_model` and `self.backend.receiver_firmware`. The Quectel
-stub has none of these, so any `gnss_backend=quectel` with RTKLIB mode crashes
-with `AttributeError`.
-
-**Fix:**
-Add to `app/gnss/quectel.py`:
-```python
-receiver_model: str = "LG290P"
-receiver_firmware: str = "unknown"
-
-async def enable_raw_output(self, serial_reader):
-    raise NotImplementedError("LG290P support coming soon")
-
-async def disable_raw_output(self, serial_reader):
-    raise NotImplementedError("LG290P support coming soon")
-```
-
-**Files:**
-- `app/gnss/quectel.py`
-
-**Verification:**
-- Set `gnss_backend=quectel` and `rtcm_engine=rtklib` in the database.
-- Start Survey365 and confirm it raises `NotImplementedError` with a clear
-  message instead of `AttributeError`.
+This section is the master checklist of issues to fix.
 
 ---
 
-### Fix 3: `stop_base()` reads `rtcm_engine` from DB — mismatch risk
+## Issue A — Native fallback mode is broken
 
-**Problem:**
-`stop_base()` reads `rtcm_engine` from the database on every call to decide
-which teardown path to use. If someone changes `rtcm_engine` in the config
-while a base session is active, `stop_base()` will try to tear down the wrong
-output stack (e.g., try to clear `rtcm_fanout` when RTKLIB services are
-running, or try to stop RTKLIB services when native outputs are active).
+### Background
 
-**Fix:**
-Track the active engine in `GNSSManager` as `_active_output_engine: str | None`.
-- `start_base()` sets `manager._active_output_engine` to the engine that was
-  actually started (`"rtklib"` or `"native"`).
-- `stop_base()` reads `manager._active_output_engine` instead of the DB.
-- `stop_base()` clears `manager._active_output_engine` to `None` after
-  teardown.
-- If `_active_output_engine` is `None`, `stop_base()` does a defensive
-  best-effort teardown of both paths (stop RTKLIB services if any are tracked
-  as running, clear rtcm_fanout if it has outputs).
+The feature branch intentionally kept `rtcm_engine=native` as a one-release
+rollback path. That means native mode must remain functional even though RTKLIB
+is now the default engine.
 
-**Files:**
-- `app/gnss/manager.py` — add `_active_output_engine` attribute
-- `app/gnss/base_station.py` — set/read/clear the attribute
+Before the RTKLIB refactor, the local caster implementation acted as a direct
+RTCM broadcaster and fit into `rtcm_fanout`.
 
-**Verification:**
-- Start base in RTKLIB mode.
-- Change `rtcm_engine` to `native` in the database (via `/api/config`).
-- Stop the base session.
-- Verify the RTKLIB services are stopped correctly (not the wrong teardown
-  path).
+After the refactor, `app/gnss/ntrip_caster.py` became a **reverse proxy** in
+front of the internal RTKLIB caster.
+
+### What is broken now
+
+In native mode, `_start_base_native()` still instantiates `NTRIPCaster`, but:
+
+- the refactored `NTRIPCaster` is now proxy-only
+- it expects an upstream on port `2110`
+- in native mode, no RTKLIB internal caster is running on `2110`
+- the native path no longer adds the caster to `rtcm_fanout`
+- the proxy no longer exposes the old `write()` broadcaster behavior
+
+This means the promised native rollback path is not actually usable.
+
+### Additional native regression
+
+Native stop / teardown also regressed.
+
+The old native stop path explicitly shut down native output behavior on the
+receiver. The new common teardown path calls `configure_rover()`, but that only
+disables raw output in RTKLIB mode. Native teardown therefore no longer fully
+restores the previous behavior.
+
+### Desired end state
+
+Native fallback must either:
+
+1. be restored fully for the one-release compatibility window, **or**
+2. be intentionally removed from the product surface with migration/docs/UI
+   updated to say native rollback is no longer supported.
+
+This plan assumes the intended path is to **restore native mode correctly** for
+one release, because that is what the original integration plan promised.
 
 ---
 
-## Phase 3 — Plan Compliance Gaps (P1)
+## Issue B — GNSS backend interface is inconsistent (`QuectelBackend`)
 
-### Fix 4: Implement MON-VER polling and real receiver descriptor
+### Background
 
-**Problem:**
-The plan requires: "Poll receiver identity once at startup with MON-VER and
-cache model/firmware for descriptor generation." Currently
-`receiver_firmware: str = "unknown"` is never updated, and no MON-VER poll
-exists. The RTKLIB `-i` descriptor is always
-`"RTKBase ZED-F9P,Survey365 unknown"`.
+`GNSSManager` now assumes all backends provide enough surface area for:
 
-The plan also specifies the descriptor format as:
+- native mode
+- RTKLIB mode
+- receiver descriptor generation
+
+### What is broken now
+
+`app/gnss/quectel.py` is only a minimal stub and is missing:
+
+- `receiver_model`
+- `receiver_firmware`
+- `enable_raw_output()`
+- `disable_raw_output()`
+
+So switching to `gnss_backend=quectel` can fail with `AttributeError` instead of
+producing a clean, explicit “not implemented yet” behavior.
+
+### Desired end state
+
+Every backend must satisfy a consistent interface. Unsupported behavior should
+fail **explicitly and predictably**, not through missing attributes.
+
+---
+
+## Issue C — MON-VER identity polling is missing
+
+### Background
+
+The RTKLIB integration plan explicitly required Survey365 to poll receiver
+identity once at startup using UBX MON-VER and then use that information in the
+metadata passed to RTKLIB.
+
+That matters because RTKBase-style output metadata is expected to contain real
+receiver identity, not placeholders.
+
+### What is broken now
+
+The u-blox backend still has firmware defaulted to `"unknown"`, and there is no
+MON-VER polling or parsing path.
+
+So the receiver descriptor and related sourcetable metadata are incomplete.
+
+### Desired end state
+
+At startup, Survey365 should:
+
+- poll MON-VER once
+- parse the returned software / hardware version information
+- cache real receiver model / firmware
+- use those values in the RTKLIB descriptor / sourcetable metadata
+
+---
+
+## Issue D — Receiver descriptor format does not match the intended RTKBase-style contract
+
+### Background
+
+The plan called for the RTKLIB `-i` descriptor to follow this field order:
+
 `RTKBase {receiver_model},{survey365_version} {receiver_firmware}`
 
-The current code produces:
+### What is broken now
+
+The current descriptor logic builds something closer to:
+
 `RTKBase {receiver_model},Survey365 {receiver_firmware}`
 
-This is missing the Survey365 version and uses the wrong field order.
+That has multiple problems:
 
-**Fix — four parts:**
+- no actual Survey365 version number
+- wrong field order relative to the planned format
+- firmware is still usually `unknown`
 
-1. **Add MON-VER constants and poll/parse logic to `app/gnss/ublox.py`.**
-   - Add constants: `UBX_MON_CLASS = 0x0A`, `UBX_MON_VER_ID = 0x04`.
-   - Add a `poll_mon_ver(serial_reader)` method that sends a zero-payload
-     UBX-MON-VER poll message and returns.
-   - Add MON-VER response parsing in `parse_frame()`: when class=0x0A
-     id=0x04 is received, extract the 30-byte `swVersion` field and the
-     30-byte `hwVersion` field from the payload, update
-     `self.receiver_firmware` and `self.receiver_model`.
-   - Allow `_should_process_ubx_message` to also pass MON-VER (0x0A, 0x04)
-     through the filter so the app queue sees the response. Alternatively,
-     handle MON-VER parsing inline in the serial reader's UBX processing
-     since it's a one-time startup event — but the simpler path is to just
-     let it through to `parse_frame()`.
+### Desired end state
 
-2. **Poll MON-VER once during startup configuration in `GNSSManager`.**
-   In `_connect_and_read()`, after `enable_antenna_voltage()`, call
-   `self.backend.poll_mon_ver(self.serial_reader)`. The response will arrive
-   as a UBX frame in the normal read loop and get parsed by `parse_frame()`.
-
-3. **Update `_should_process_ubx_message` to also pass 0x0A/0x04.**
-   Add `(msg_class == 0x0A and msg_id == 0x04)` to the filter so the
-   MON-VER response frame reaches `parse_frame()`. Similarly update
-   `_should_queue_frame` for UBX class 0x0A.
-
-4. **Fix the receiver descriptor format in `GNSSManager.receiver_descriptor()`.**
-   The plan format is: `RTKBase {model},{survey365_version} {firmware}`.
-   Since there is no `app/version.py` or `__version__`, use the git short
-   hash or a hardcoded version string. Recommended: read the version from a
-   `app/version.py` file (create it with a `__version__ = "1.0.0"` constant)
-   so it can be bumped independently.
-
-   Update `receiver_descriptor()` to:
-   ```python
-   def receiver_descriptor(self) -> str:
-       from ..version import __version__
-       return (
-           f"RTKBase {self.backend.receiver_model},"
-           f"Survey365_{__version__} {self.backend.receiver_firmware}"
-       )
-   ```
-
-5. **Fix the hardcoded sourcetable `receiver_label` in `base_station.py`.**
-   Line 118 hardcodes `"RTKBase_ZED-F9P,Survey365"`. Replace with a dynamic
-   value derived from `manager.backend.receiver_model` and the app version:
-   ```python
-   "receiver_label": f"RTKBase_{manager.backend.receiver_model},Survey365_{version}",
-   ```
-
-**Files:**
-- `app/gnss/ublox.py` — MON-VER constants, poll method, parse logic
-- `app/gnss/manager.py` — poll on connect, update filters, fix descriptor
-- `app/gnss/base_station.py` — dynamic receiver_label in runtime config
-- `app/version.py` — new file with `__version__`
-
-**Verification:**
-- Start Survey365 connected to an F9P.
-- Check logs for MON-VER parse output with actual firmware version.
-- Start a base session.
-- Read `active-base.json` and verify `receiver_descriptor` contains real
-  firmware and app version.
-- Connect a rover and inspect the NTRIP sourcetable for correct receiver
-  label.
+The metadata passed to RTKLIB should be deterministic, versioned, and match the
+intended field layout.
 
 ---
 
-### Fix 5: Missing `reset-failed` sudoers entries
+## Issue E — Status APIs use cached service state instead of real systemd state
 
-**Problem:**
-The plan requires sudoers entries for `start`, `stop`, `restart`, `is-active`,
-and `reset-failed` for each RTKLIB unit. `reset-failed` is missing.
+### Background
 
-**Fix:**
-Add three lines to the sudoers block in `scripts/setup-pi.sh`:
-```
-$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reset-failed survey365-rtklib-local-caster.service
-$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reset-failed survey365-rtklib-outbound.service
-$TARGET_USER ALL=(ALL) NOPASSWD: /usr/bin/systemctl reset-failed survey365-rtklib-log.service
-```
+One goal of this integration was to make RTKLIB outputs be managed by systemd.
+Once systemd owns those units, operator-visible status should reflect actual
+unit state, not just what the application *thinks* it started.
 
-Also add a `reset_failed_service()` helper to `app/systemd.py` so base_station
-can call it if needed before a restart:
-```python
-async def reset_failed_service(name: str) -> None:
-    await sudo_systemctl("reset-failed", name)
-```
+### What is broken now
 
-**Files:**
+`/api/status` uses in-memory booleans maintained by the app rather than checking
+real unit state.
+
+That means status can drift from reality if:
+
+- a `str2str` unit crashes
+- a unit starts and then immediately exits
+- systemd restarts or fails a unit
+- someone manipulates a unit outside the normal app flow
+
+### Desired end state
+
+Operator-facing service status must reflect **real unit state**. It is fine to
+cache or memoize if needed for performance, but not to rely solely on optimistic
+internal flags.
+
+---
+
+## Issue F — Output-engine state is split between DB config and manager runtime state
+
+### Background
+
+The branch currently makes some engine decisions based on the DB config value
+`rtcm_engine`, while `GNSSManager` separately keeps its own cached `_rtcm_engine`
+loaded at startup.
+
+### What is broken now
+
+If the DB value changes while the app is running, different parts of the system
+can disagree about which output engine is active.
+
+That can affect both:
+
+- startup behavior
+- teardown behavior
+
+This is especially risky during stop / reconfigure flows.
+
+### Desired end state
+
+There should be a clear distinction between:
+
+- **configured engine**
+- **currently active engine for the running session**
+
+Teardown should use the engine that was actually started, not whatever the DB
+happens to say later.
+
+---
+
+## Issue G — Local caster health reporting is inconsistent
+
+### Background
+
+There are two important operator views of local-caster state:
+
+- `/api/status`
+- `/api/ntrip/local-caster/clients`
+
+Both should communicate the same reality.
+
+### What is broken now
+
+The proxy tracks upstream state in a way that is only partially tied to actual
+health. For example:
+
+- a healthy upstream may still appear inactive until traffic has flowed
+- prior successful traffic can leave health looking better than it is
+- `/api/status` uses one notion of state and the proxy snapshot uses another
+
+### Desired end state
+
+Local-caster state should be:
+
+- internally consistent
+- understandable from the UI/API
+- clearly based on real runtime conditions
+
+---
+
+## Issue H — Runtime file contract is incomplete
+
+### Background
+
+The runtime file under `{data_dir}/rtklib/active-base.json` is the handoff
+contract between Survey365 and the RTKLIB launcher.
+
+The original plan described it as a complete description of the active base
+session, not just a partial argument bundle.
+
+### What is missing now
+
+The current runtime file omits some planned fields, including items like:
+
+- active mode
+- external local-caster port
+- fully self-describing session/runtime context
+
+### Desired end state
+
+The runtime file should be complete enough that:
+
+- it is easy to debug by inspection
+- launcher behavior is fully explained by the file
+- operator/session context is recoverable from the file alone
+
+---
+
+## Issue I — Outbound profile validation is too weak
+
+### Background
+
+RTKLIB outbound push depends on DB-backed NTRIP profile values.
+
+### What is broken now
+
+If the default outbound profile is incomplete, Survey365 can still write a
+runtime config and attempt to start the outbound unit with malformed or missing
+values.
+
+### Desired end state
+
+Outbound startup should fail safely and clearly:
+
+- incomplete profile → log warning and skip outbound unit
+- valid profile → write correct runtime and start service
+
+The rest of the stack should still come up when possible.
+
+---
+
+## Issue J — UBX fast-skip path can discard data using only header-derived length
+
+### Background
+
+The serial reader was optimized to avoid queueing high-volume UBX messages that
+Survey365 itself does not need, while still relaying raw bytes to RTKLIB.
+
+### What is broken now
+
+The reader may discard an unneeded UBX frame based on the header-derived length
+before verifying the checksum.
+
+If the header length is corrupt, valid downstream bytes could be skipped.
+
+### Desired end state
+
+Filtering should only occur after a frame has been validated as structurally
+correct.
+
+---
+
+## Issue K — Raw relay broadcasting has head-of-line blocking risk
+
+### Background
+
+The raw relay is designed to fan out the exact receiver byte stream to multiple
+localhost clients, typically:
+
+- RTKLIB local caster
+- RTKLIB outbound push
+- RTKLIB log service
+
+### What is risky now
+
+Broadcast currently drains clients sequentially. One slow client can delay the
+others.
+
+The queue is bounded, so slow consumers can also increase the chance of dropped
+chunks.
+
+### Desired end state
+
+The relay should remain simple, but we should decide explicitly whether to:
+
+- accept the current behavior as sufficient for expected load, or
+- improve it so one slow consumer does not throttle the rest.
+
+This does not necessarily have to become a large redesign, but it should be
+reviewed and either improved or clearly documented.
+
+---
+
+## Issue L — Installer / sudoers gaps remain
+
+### Background
+
+The feature branch updated the Pi installer and service management rules, but a
+few follow-up tasks are still needed.
+
+### Known gaps
+
+- `reset-failed` sudoers entries are missing for RTKLIB services
+- `pkg-config` and `unzip` were requested in the original plan but are not yet
+  in the dependency set
+
+### Desired end state
+
+Installer output, unit permissions, and prerequisites should match the intended
+operational model exactly.
+
+---
+
+## Issue M — UI wording is only partially updated
+
+### Background
+
+The backend moved from Python-based RTCM/RINEX-style logging to RTKLIB raw GNSS
+logging, but config keys were intentionally preserved for compatibility.
+
+### What is wrong now
+
+The admin UI still uses stale terms like:
+
+- raw RTCM logging
+- RINEX rotate hours
+- RINEX data dir
+
+This no longer reflects the actual data path.
+
+### Desired end state
+
+The UI should clearly describe:
+
+- Survey365 owns the receiver
+- RTKLIB generates corrections
+- local caster is proxied for visibility
+- raw logging is raw GNSS / UBX logging
+- ellipsoid heights are what drive broadcast metadata
+
+---
+
+## Issue N — Documentation needs to match the hardened behavior exactly
+
+### Background
+
+The architecture docs were updated, but after the hardening work lands, the docs
+must reflect the final actual behavior rather than the first pass.
+
+### Desired end state
+
+The following docs should be re-reviewed and corrected as needed after all code
+changes are in place:
+
+- `CLAUDE.md`
+- `documentation/NATIVE-GNSS-ARCHITECTURE.md`
+- this file
+
+---
+
+## Issue O — Test coverage is missing
+
+### Background
+
+The RTKLIB integration plan included a meaningful test matrix. None of that was
+implemented in the initial feature branch.
+
+### Desired end state
+
+There should be focused automated tests covering at least:
+
+- raw relay byte fidelity
+- launcher argv generation
+- proxy request / GGA capture behavior
+- migration behavior for legacy `rtcm_messages`
+- serial-reader filtering behavior
+
+And there should be a documented Pi verification matrix for live testing.
+
+---
+
+## Issue P — Verify `NoNewPrivileges` behavior and document the final decision
+
+### Background
+
+The feature branch removed `NoNewPrivileges=true` from `survey365.service` to
+support `sudo -n systemctl ...` child-unit control.
+
+This is one of the few review items where the correct answer should be driven by
+actual runtime testing rather than assumption.
+
+### Desired end state
+
+We should explicitly verify on the Pi whether `NoNewPrivileges=true` can be
+restored without breaking child-unit control.
+
+- If it can be restored safely, restore it.
+- If it cannot, keep it removed and document the exact reason in the unit file
+  comment and in deployment notes.
+
+This should be resolved intentionally, not left ambiguous.
+
+---
+
+# Phase 2 — Implementation Workstreams
+
+The fixes should be done as coordinated workstreams rather than random file
+edits.
+
+---
+
+## Workstream 1 — Restore native rollback support cleanly
+
+### Goal
+
+Make `rtcm_engine=native` actually work again for the one-release compatibility
+window.
+
+### Implementation plan
+
+1. Rework `app/gnss/ntrip_caster.py` so it can support **two explicit modes**:
+   - **direct broadcast mode** for native output
+   - **proxy mode** for RTKLIB output
+
+2. Preserve shared client-session features across both modes:
+   - request line capture
+   - header capture
+   - bytes in / out
+   - incoming text
+   - NMEA / GGA parsing
+   - session history
+
+3. In native mode, the local caster must once again:
+   - act as an RTCMOutput-compatible sink
+   - be attachable to `rtcm_fanout`
+   - serve a direct sourcetable / stream without requiring an upstream
+
+4. Update `_start_base_native()` in `app/gnss/base_station.py` so it:
+   - creates the caster in direct mode
+   - adds it to `manager.rtcm_fanout`
+   - stores a reference for API visibility
+
+5. Update teardown so native mode also clears the local caster reference and
+   fully restores receiver state.
+
+6. Confirm native stop behavior still disables the correct receiver-side native
+   output behavior.
+
+### Files expected to change
+
+- `app/gnss/ntrip_caster.py`
+- `app/gnss/base_station.py`
+- possibly `app/gnss/manager.py` if helper hooks are needed
+
+### Acceptance criteria
+
+- native known-base start works
+- native local caster serves RTCM directly
+- native stop fully tears down outputs
+- `/api/ntrip/local-caster/clients` still works in native mode
+
+---
+
+## Workstream 2 — Make GNSS backend contracts explicit and safe
+
+### Goal
+
+Ensure every backend exposes the attributes/methods the manager now depends on.
+
+### Implementation plan
+
+1. Add missing interface surface to `QuectelBackend`:
+   - receiver identity attributes
+   - raw-output method stubs
+
+2. Optionally define a lightweight backend protocol or at least a docstring
+   contract listing the required methods / attributes.
+
+3. Fail unsupported paths with `NotImplementedError` and clear logging, not
+   missing-attribute crashes.
+
+### Files expected to change
+
+- `app/gnss/quectel.py`
+- possibly `app/gnss/manager.py` docstrings / typing
+
+### Acceptance criteria
+
+- selecting `quectel` never produces `AttributeError`
+- unsupported operations fail explicitly and predictably
+
+---
+
+## Workstream 3 — Add receiver identity discovery and correct metadata formatting
+
+### Goal
+
+Generate real RTKBase-style metadata rather than placeholders.
+
+### Implementation plan
+
+1. Add UBX MON-VER support to the u-blox backend:
+   - constants
+   - poll helper
+   - response parsing
+
+2. Update the manager’s UBX filters so MON-VER is allowed through once.
+
+3. Trigger the poll on connect/startup after basic startup config.
+
+4. Add an application version source:
+   - preferred: `app/version.py` with `__version__`
+
+5. Update `receiver_descriptor()` to match the intended contract.
+
+6. Replace hardcoded receiver label values in the RTKLIB runtime payload with
+   values derived from actual backend/app identity.
+
+### Files expected to change
+
+- `app/gnss/ublox.py`
+- `app/gnss/manager.py`
+- `app/gnss/base_station.py`
+- `app/version.py`
+
+### Acceptance criteria
+
+- logs show MON-VER parse at startup
+- `active-base.json` contains real metadata
+- sourcetable / RTKLIB descriptor use real model + version + firmware
+
+---
+
+## Workstream 4 — Unify configured engine vs active engine semantics
+
+### Goal
+
+Prevent DB config drift from breaking stop/start logic.
+
+### Implementation plan
+
+1. Add explicit runtime state to `GNSSManager`, e.g.:
+   - configured engine (loaded from config)
+   - active output engine for the running base session
+
+2. When a base session starts, record the engine that was actually started.
+
+3. When a base session stops, use the active runtime engine, not the current DB
+   value.
+
+4. Ensure teardown remains defensive if state is partially lost.
+
+5. Audit all start/stop callers to make sure mode transitions remain consistent.
+
+### Files expected to change
+
+- `app/gnss/manager.py`
+- `app/gnss/base_station.py`
+- maybe `app/routes/mode.py` if explicit mode/engine state should be threaded
+
+### Acceptance criteria
+
+- changing `rtcm_engine` in config while a session is active does not break
+  teardown
+- stop always tears down the stack that is actually running
+
+---
+
+## Workstream 5 — Make status APIs reflect reality
+
+### Goal
+
+Have service status in the API match actual systemd state and actual proxy
+health.
+
+### Implementation plan
+
+1. Rework `app/systemd.py` so it exposes helpers for:
+   - `systemctl is-active`
+   - optionally `systemctl show` / more detailed checks if needed
+   - `reset-failed` support
+
+2. Replace the optimistic in-memory-only status path with one of these:
+   - real-time systemd checks on status requests, or
+   - a short-lived cache refreshed from real systemd state
+
+3. Define consistent local-caster health semantics across:
+   - `/api/status`
+   - `/api/ntrip/local-caster/clients`
+
+4. Decide how to represent proxy vs upstream health separately so operators can
+   understand what failed.
+
+### Files expected to change
+
+- `app/systemd.py`
+- `app/routes/status.py`
+- `app/gnss/ntrip_caster.py`
+- maybe `app/routes/ntrip.py`
+
+### Acceptance criteria
+
+- if a child RTKLIB unit crashes, `/api/status` reflects that accurately
+- local-caster status is consistent across endpoints
+- proxy health vs upstream health is understandable
+
+---
+
+## Workstream 6 — Complete the runtime config contract
+
+### Goal
+
+Make `active-base.json` a complete, self-describing runtime handoff file.
+
+### Implementation plan
+
+1. Add missing fields such as:
+   - active mode
+   - external local-caster port
+   - any other planned values needed for debugging / introspection
+
+2. Pass explicit mode information from the mode route into `start_base()`.
+
+3. Review launcher needs and ensure the runtime file documents all arguments it
+   relies on.
+
+4. Keep backward compatibility simple: the launcher only needs the new file
+   shape used by the hardening branch.
+
+### Files expected to change
+
+- `app/gnss/base_station.py`
+- `app/routes/mode.py`
+- `app/rtklib/runtime.py`
+- possibly `app/rtklib/launcher.py`
+
+### Acceptance criteria
+
+- runtime file contains all planned context fields
+- file is easy to inspect for support/debugging
+
+---
+
+## Workstream 7 — Harden outbound startup validation
+
+### Goal
+
+Prevent malformed outbound config from starting a broken service.
+
+### Implementation plan
+
+1. Validate the selected outbound profile before writing runtime config.
+
+2. Required values should be treated explicitly:
+   - host must be present
+   - mountpoint must be present
+   - password behavior should be intentional and documented
+
+3. If invalid:
+   - log a clear warning
+   - skip outbound unit startup
+   - continue starting other outputs if possible
+
+4. Update any UI copy or API validation only if necessary; keep existing DB
+   schema stable.
+
+### Files expected to change
+
+- `app/gnss/base_station.py`
+- possibly `app/routes/ntrip.py` if stronger validation belongs in the API too
+
+### Acceptance criteria
+
+- incomplete outbound profile no longer produces confusing RTKLIB startup
+  failure
+- other outputs still come up normally
+
+---
+
+## Workstream 8 — Fix serial-reader robustness
+
+### Goal
+
+Preserve the filtering optimization without risking buffer corruption from
+header-only skipping.
+
+### Implementation plan
+
+1. Change UBX filter sequencing so frame validation occurs before filtered
+   frames are discarded.
+
+2. Keep the raw relay behavior unchanged: raw chunks must still be forwarded
+   before parsing decisions.
+
+3. Re-test queue pressure and parser correctness after the change.
+
+### Files expected to change
+
+- `app/gnss/serial_reader.py`
+
+### Acceptance criteria
+
+- filtered frames are still not queued to the app unnecessarily
+- invalid header lengths cannot cause unchecked multi-byte skips
+
+---
+
+## Workstream 9 — Review and improve raw-relay broadcast behavior
+
+### Goal
+
+Decide whether the current sequential drain design is sufficient or should be
+improved.
+
+### Implementation plan
+
+1. Measure current behavior with expected consumer count on the Pi.
+
+2. If acceptable, document why.
+
+3. If not acceptable, improve one of:
+   - write-all then drain strategy
+   - per-client buffering
+   - lighter-weight backpressure handling
+
+4. Keep the relay simple; do not over-engineer if real-world measurements show
+   current behavior is adequate.
+
+### Files expected to change
+
+- `app/gnss/raw_relay.py`
+- maybe new tests to validate behavior
+
+### Acceptance criteria
+
+- one slow consumer does not create unacceptable degradation for other expected
+  RTKLIB consumers
+- behavior is documented and test-covered
+
+---
+
+## Workstream 10 — Finish installer and service-management parity
+
+### Goal
+
+Bring `setup-pi.sh` and service-management behavior into line with the intended
+operational model.
+
+### Implementation plan
+
+1. Add missing dependencies:
+   - `pkg-config`
+   - `unzip`
+
+2. Add `reset-failed` sudoers entries for each RTKLIB unit.
+
+3. Optionally expose a helper in `app/systemd.py` for `reset-failed`.
+
+4. Verify the installer output remains idempotent and Pi-safe.
+
+### Files expected to change
+
 - `scripts/setup-pi.sh`
 - `app/systemd.py`
 
-**Verification:**
-- Run `setup-pi.sh` on the Pi.
-- Verify `/etc/sudoers.d/survey365` contains the `reset-failed` lines.
-- Run `sudo -n systemctl reset-failed survey365-rtklib-local-caster.service`
-  as the survey365 user and confirm it succeeds.
+### Acceptance criteria
+
+- installer deploys the expected dependency set
+- survey365 user can `reset-failed` RTKLIB units without a password
 
 ---
 
-### Fix 6: Missing `pkg-config` and `unzip` in setup-pi DEPS
+## Workstream 11 — Verify and document final systemd hardening choice
 
-**Problem:**
-The plan calls for `build-essential`, `pkg-config`, and `unzip` as RTKBase-
-proven build prerequisites. Only `build-essential` and `curl` were added.
+### Goal
 
-**Fix:**
-Add `pkg-config` and `unzip` to the DEPS array in `scripts/setup-pi.sh`.
+Resolve the `NoNewPrivileges` question intentionally.
 
-**Files:**
-- `scripts/setup-pi.sh`
+### Implementation plan
 
-**Verification:**
-- Run `setup-pi.sh` on a fresh Pi.
-- Confirm `pkg-config` and `unzip` are installed.
+1. Test on the Pi whether `survey365.service` can keep `NoNewPrivileges=true`
+   while still allowing `sudo -n systemctl ...` to manage child RTKLIB units.
 
----
+2. If yes:
+   - restore `NoNewPrivileges=true`
+   - leave an explanatory comment
 
-### Fix 7: UI logging terminology not updated
+3. If no:
+   - keep it removed
+   - update the comment to state exactly why it cannot remain enabled
 
-**Problem:**
-The plan says: "change UI/docs wording from 'RINEX / raw RTCM logging' to
-'Raw GNSS logging'." The admin UI still uses stale terminology:
-- "Enable raw RTCM logging" (line 519)
-- "RINEX Rotate Hours" (line 524)
-- "RINEX Data Dir" (line 528)
+### Files expected to change
 
-This is misleading because RTKLIB now logs raw UBX, not RTCM.
-
-**Fix:**
-Update `ui/admin.html`:
-- "Enable raw RTCM logging" → "Enable raw GNSS logging"
-- "RINEX Rotate Hours" → "Log Rotation (hours)"
-- "RINEX Data Dir" → "Raw Log Directory"
-
-Keep the underlying config keys (`rinex_enabled`, `rinex_rotate_hours`,
-`rinex_data_dir`) unchanged for backward compatibility as the plan specifies.
-
-**Files:**
-- `ui/admin.html`
-
-**Verification:**
-- Load the admin page and confirm the labels are updated.
-- Save config and confirm the correct keys are still sent to the API.
-
----
-
-### Fix 8: `active-base.json` missing planned fields
-
-**Problem:**
-The plan says the runtime file should contain: active mode, local external
-port, internal RTKLIB port, and other fields. Currently missing:
-- `active_mode` (e.g., `"known_base"`, `"relative_base"`)
-- `external_local_caster_port` (the LAN-facing proxy port)
-
-**Fix:**
-Add the missing fields to the runtime payload in
-`app/gnss/base_station.py` `_start_base_rtklib()`:
-```python
-runtime = {
-    "active_mode": mode,  # pass mode from caller
-    "raw_relay_port": RAW_RELAY_PORT,
-    "trace_level": 0,
-    "position": { ... },
-    ...
-    "outputs": {
-        "local_caster": {
-            ...
-            "external_port": local_caster_port,
-            "internal_port": LOCAL_CASTER_INTERNAL_PORT,
-            ...
-        },
-        ...
-    },
-}
-```
-
-This requires threading the active mode string from the mode route through
-`start_base()`. Add an optional `mode: str | None = None` parameter to
-`start_base()` and `_start_base_rtklib()`.
-
-**Files:**
-- `app/gnss/base_station.py` — add fields to runtime payload, add mode param
-- `app/routes/mode.py` — pass mode string to `start_base()`
-
-**Verification:**
-- Start a known-base session.
-- Read `{data_dir}/rtklib/active-base.json`.
-- Confirm `active_mode`, `external_port` fields are present and correct.
-
----
-
-## Phase 4 — Correctness and Robustness (P2)
-
-### Fix 9: UBX frames skipped without checksum validation
-
-**Problem:**
-In `serial_reader.py`, when `_should_process_ubx()` returns `False`, the frame
-is deleted from the buffer using only the header-derived length — without
-validating the checksum. If the header is corrupt (bad length field), this
-could consume/discard arbitrary data from the buffer.
-
-**Fix:**
-Move the filter check to after `_try_ubx()` succeeds (checksum validated),
-not before. The performance optimization of skipping checksum validation on
-filtered messages is not worth the data-integrity risk.
-
-Revised flow:
-```python
-frame_len = self._peek_ubx_frame_length(buffer)
-if frame_len > 0:
-    frame_len = self._try_ubx(buffer)
-if frame_len > 0:
-    if self._should_process_ubx(buffer):
-        frame = bytes(buffer[:frame_len])
-        if self._should_emit("ubx", frame):
-            self._emit("ubx", frame)
-    del buffer[:frame_len]
-    continue
-```
-
-This still skips the queue for unneeded messages (RXM-RAWX, RXM-SFRBX) but
-only after confirming the frame is valid. The checksum computation is cheap
-(Fletcher-8 over a few hundred bytes).
-
-**Files:**
-- `app/gnss/serial_reader.py`
-
-**Verification:**
-- Start Survey365 with RTKLIB mode.
-- Monitor logs for any frame parse errors.
-- Verify NAV-PVT and NAV-SAT frames are still parsed correctly.
-- Verify RXM-RAWX / RXM-SFRBX frames are skipped from the queue but the raw
-  relay still gets the bytes (raw relay receives pre-parse chunks).
-
----
-
-### Fix 10: `NoNewPrivileges=true` removed unnecessarily from survey365.service
-
-**Problem:**
-The comment says "Survey365 needs sudo -n systemctl access to manage RTKLIB
-child units" but `sudo` is a setuid binary — it elevates privileges before
-`NoNewPrivileges` applies to the child process. Removing `NoNewPrivileges=true`
-weakens security hardening for no reason.
-
-**Fix:**
-Restore `NoNewPrivileges=true` in `systemd/survey365.service`. Test that
-`sudo -n systemctl start/stop` still works with it enabled.
-
-If testing reveals `NoNewPrivileges=true` does block `sudo -n` in this
-specific systemd context, keep it removed but update the comment to explain
-why with the specific error observed.
-
-**Files:**
 - `systemd/survey365.service`
+- maybe docs / comments if explanation is needed
 
-**Verification:**
-- Deploy the unit to the Pi.
-- Start a base session that starts RTKLIB services via sudo.
-- Confirm `sudo -n systemctl start survey365-rtklib-local-caster.service`
-  succeeds.
-- If it fails, revert and document the reason in the comment.
+### Acceptance criteria
+
+- final unit file reflects an intentional, tested decision
 
 ---
 
-### Fix 11: Outbound profile validation
+## Workstream 12 — Finish UI and documentation wording cleanup
 
-**Problem:**
-When `ntrip_push` is in the outputs list, the outbound profile is loaded from
-the database. If required fields (`host`, `mountpoint`, `password`) are empty
-or NULL, the generated str2str command line will be malformed. str2str may fail
-silently or produce confusing errors.
+### Goal
 
-**Fix:**
-Add validation in `_start_base_rtklib()` after loading the outbound profile.
-If `host` or `mountpoint` is empty/None, log a warning and skip outbound
-(treat it as not enabled) rather than writing a broken runtime config.
+Make operator-facing text accurately describe the final architecture.
 
-```python
-if outbound_profile is not None:
-    if not outbound_profile.get("host") or not outbound_profile.get("mountpoint"):
-        logger.warning("Outbound NTRIP profile is incomplete (missing host or mountpoint), skipping push")
-        outbound_profile = None
-```
+### Implementation plan
 
-An empty password is allowed (some casters accept anonymous source pushes), so
-only validate `host` and `mountpoint`.
+1. Update admin UI logging labels to describe raw GNSS logging instead of RTCM /
+   RINEX wording.
 
-**Files:**
-- `app/gnss/base_station.py`
+2. Re-review all relevant notes in the UI so they clearly state:
+   - Survey365 owns the receiver
+   - RTKLIB generates corrections
+   - outbound source pushes are password-oriented in RTKLIB mode
+   - ellipsoid height drives broadcast metadata
 
-**Verification:**
-- Create an outbound profile with an empty host.
-- Start a base session.
-- Confirm the outbound service is NOT started and a warning is logged.
-- Confirm the rest of the output stack (local caster, logging) starts
-  correctly.
+3. Re-review docs after code is complete so docs match reality exactly.
+
+### Files expected to change
+
+- `ui/admin.html`
+- `CLAUDE.md`
+- `documentation/NATIVE-GNSS-ARCHITECTURE.md`
+- this file if implementation details shift
+
+### Acceptance criteria
+
+- no stale “raw RTCM” / “RINEX” wording remains where it is now misleading
+- docs read like the final product, not a halfway state
 
 ---
 
-## Phase 5 — Unit Tests (P2)
+## Workstream 13 — Add automated tests
 
-### Fix 12: Add focused unit tests
+### Goal
 
-**Problem:**
-The plan has an explicit test matrix. No tests exist in the repo.
+Add focused tests around the new behavior so the hardening work is durable.
 
-**Setup:**
-- Create `tests/` directory.
-- Add `pytest` and `pytest-asyncio` to a `requirements-dev.txt` (do not add to
-  production `requirements.txt`).
-- Create `tests/conftest.py` with common fixtures.
+### Minimum automated test set
 
-**Tests to add:**
+#### Raw relay tests
 
-#### `tests/test_raw_relay.py`
-- **test_broadcast_exact_bytes**: Start relay, connect two TCP clients, publish
-  known byte sequences, verify both clients receive identical bytes in order.
-- **test_queue_full_drops_gracefully**: Fill the queue to capacity, verify
-  `publish_nowait` does not raise, verify the drop counter increments.
-- **test_dead_client_cleanup**: Connect a client, close it, publish data,
-  verify the relay removes the dead client without crashing.
+- exact byte preservation to multiple clients
+- graceful handling of queue saturation
+- dead-client cleanup
 
-#### `tests/test_launcher.py`
-- **test_local_caster_argv**: Write a known `active-base.json`, call
-  `build_command("local_caster")`, verify the exact argv list including
-  `-in`, `-msg`, `-out`, `-p`, `-i`, `-a`, `-t`, `-fl` flags.
-- **test_outbound_argv**: Same for outbound role, verify `ntrips://` URL
-  format with password-only auth.
-- **test_log_argv**: Same for log role, verify `file://` URL with rotation
-  syntax and no `-msg`/`-p`/`-i`/`-a` flags.
-- **test_disabled_role_exits**: Write config with a role disabled, call
-  `build_command()`, verify `SystemExit` is raised.
+#### Launcher tests
 
-#### `tests/test_ntrip_caster_proxy.py`
-- **test_proxy_captures_gga**: Start a mock upstream TCP server that sends
-  `ICY 200 OK` + RTCM bytes. Start the proxy. Connect a test client that
-  sends a GGA sentence. Verify `snapshot_clients()` contains the parsed GGA
-  with latitude/longitude.
-- **test_proxy_source_table_passthrough**: Start a mock upstream that returns
-  a sourcetable. Verify the proxy returns the exact same bytes to the client.
-- **test_proxy_upstream_failure**: Start the proxy with an unreachable
-  upstream port. Connect a client. Verify `last_proxy_error` is set and
-  `upstream_active` is `False`.
+- exact argv generation for:
+  - local caster
+  - outbound push
+  - log role
+- disabled-role behavior
 
-#### `tests/test_migration.py`
-- **test_migration_copies_custom_rtcm_messages**: Set up an in-memory SQLite
-  DB with a non-default `rtcm_messages` value. Run `init_db()`. Verify
-  `rtklib_local_messages` and `rtklib_outbound_messages` both contain the
-  custom value.
-- **test_migration_skips_default_rtcm_messages**: Set up a DB with the old
-  default `rtcm_messages` value (`1005,1077,1087,1097,1127,1230(10)`). Run
-  `init_db()`. Verify the RTKLIB message keys have the RTKBase default, not
-  the old Survey365 default.
-- **test_fresh_install_gets_rtklib_defaults**: Run `init_db()` on an empty
-  DB. Verify `rtcm_engine=rtklib` and message keys have RTKBase defaults.
+#### Proxy tests
 
-#### `tests/test_serial_reader.py`
-- **test_raw_chunk_callback_before_parsing**: Create a `SerialReader` with a
-  mock callback. Feed raw bytes. Verify the callback receives the exact raw
-  bytes before any frame extraction.
-- **test_ubx_filter_skips_unwanted_messages**: Create a reader with a filter
-  that only passes NAV-PVT. Feed a valid RXM-RAWX frame followed by a
-  NAV-PVT frame. Verify only NAV-PVT reaches the output queue.
+- source-table pass-through
+- ICY stream pass-through
+- inbound GGA capture and parsing
+- upstream failure reporting
 
-**Files:**
-- `requirements-dev.txt` — new file
-- `tests/__init__.py` — new empty file
-- `tests/conftest.py` — new file with fixtures
-- `tests/test_raw_relay.py` — new file
-- `tests/test_launcher.py` — new file
-- `tests/test_ntrip_caster_proxy.py` — new file
-- `tests/test_migration.py` — new file
-- `tests/test_serial_reader.py` — new file
+#### Migration tests
 
-**Verification:**
-- `pip install -r requirements-dev.txt`
-- `python -m pytest tests/ -v`
-- All tests pass.
+- legacy custom `rtcm_messages` copied into RTKLIB keys once
+- old default does not overwrite RTKBase defaults incorrectly
+- fresh install gets RTKLIB defaults
+
+#### Serial reader tests
+
+- raw chunk callback sees exact bytes
+- filtered UBX messages are skipped only after validation
+
+### Suggested test scaffolding
+
+- `requirements-dev.txt`
+- `pytest`
+- `pytest-asyncio`
+- `tests/` package with focused modules
+
+### Files expected to change
+
+- `requirements-dev.txt`
+- `tests/...`
+
+### Acceptance criteria
+
+- the automated test suite passes locally and on the Pi
 
 ---
 
-## Phase 6 — Deploy and Field Verification
+# Phase 3 — Detailed Execution Order
 
-### Step 1: Deploy to Pi
+The recommended implementation order is:
+
+1. **Merge current PR and branch cleanup**
+2. **Quectel backend contract fix**
+3. **Native fallback restoration**
+4. **Engine-state unification**
+5. **MON-VER + descriptor + version work**
+6. **Status / real systemd state / local-caster health semantics**
+7. **Runtime-file completion**
+8. **Outbound validation**
+9. **Serial-reader robustness fix**
+10. **Installer and sudoers parity**
+11. **NoNewPrivileges verification**
+12. **UI/docs wording cleanup**
+13. **Automated tests**
+14. **Pi deployment + verification loop**
+15. **Fix-forward until 100% clean**
+16. **Open the hardening PR for review**
+
+This order minimizes cross-file churn and allows meaningful incremental testing.
+
+---
+
+# Phase 4 — Pi Deployment and Verification Loop
+
+This phase is mandatory. The hardening branch is not done until it has gone
+through repeated deploy / verify / fix cycles on the actual Pi.
+
+## Step 4.1 — Deploy the branch to the Pi
 
 ```bash
-# On the Pi
 cd ~/survey365
 git fetch origin
 git checkout fix/rtklib-integration-hardening
@@ -576,72 +1112,71 @@ sudo bash scripts/setup-pi.sh
 sudo systemctl restart survey365
 ```
 
-### Step 2: Verify RTKLIB mode (primary path)
+## Step 4.2 — Verify baseline app health
 
-1. Confirm `rtcm_engine=rtklib` in `/api/config`.
-2. Start a known-base session with local caster and outbound push enabled.
-3. Verify all three RTKLIB units are active:
-   ```bash
-   systemctl is-active survey365-rtklib-local-caster.service
-   systemctl is-active survey365-rtklib-outbound.service
-   systemctl is-active survey365-rtklib-log.service
-   ```
-4. Read `active-base.json` and verify:
-   - `active_mode` is present and correct
-   - `receiver_descriptor` contains real firmware version (not "unknown")
-   - `external_port` is present in local_caster output
-5. Connect a rover to the local caster external port.
-6. Verify `/api/ntrip/local-caster/clients` shows:
-   - The connected client
-   - `upstream_active: true`
-   - `upstream_port: 2110`
-   - Captured GGA if the rover sends it
-7. Verify `/api/status` shows:
-   - `local_caster: true`
-   - `ntrip_push: true`
-   - `rinex_logging: true`
-   - `raw_relay_clients` >= 1
-8. Capture 60–120 seconds of RTCM from the local caster and verify presence
-   of messages: 1005, 1006, 1008, 1033, 1077, 1087, 1097, 1127, 1230, and
-   at least some broadcast ephemeris messages.
-9. Inspect the NTRIP sourcetable (`GET /` on external port) and verify the
-   receiver label and descriptor fields are populated with real values.
-10. Stop the session and verify clean teardown:
-    - All three RTKLIB units are inactive.
-    - `active-base.json` is deleted.
-    - `/api/status` shows all outputs false.
-    - Receiver is back in rover mode.
+Confirm:
 
-### Step 3: Verify auto-resume
+- Survey365 service starts
+- UI loads
+- GNSS receiver connects
+- logs do not show immediate startup regressions
 
-1. Start a known-base session.
-2. Set `auto_resume=true` in config.
-3. Reboot the Pi.
-4. After boot, verify the base session and RTKLIB units came back
-   automatically.
-5. Set `auto_resume=false`, reboot, and verify units stay down.
+## Step 4.3 — Verify primary RTKLIB mode
 
-### Step 4: Verify native fallback (if time permits)
+Test at minimum:
 
-1. Set `rtcm_engine=native` in `/api/config`.
-2. Start a known-base session with local caster enabled.
-3. Connect a rover and verify it receives RTCM data through the direct
-   caster (not the proxy).
-4. Verify `/api/ntrip/local-caster/clients` shows the rover.
-5. Stop the session and verify clean teardown.
-6. Set `rtcm_engine=rtklib` back.
+1. known-base mode start
+2. relative-base mode start
+3. outbound push enabled / disabled cases
+4. local caster enabled / disabled cases
+5. raw logging enabled / disabled cases
+6. stop / restart / resume flows
+7. auto-resume true / false behavior after reboot
 
-### Step 5: Verify admin UI
+For each case, verify:
 
-1. Load the admin page.
-2. Confirm logging section says "Enable raw GNSS logging",
-   "Log Rotation (hours)", and "Raw Log Directory".
-3. Confirm RTKLIB message fields and antenna descriptor are editable.
-4. Confirm outbound caster note mentions password-only auth.
-5. Confirm correction engine field is displayed as read-only.
-6. Save config and verify round-trip.
+- expected services are active
+- unexpected services are inactive
+- `active-base.json` is correct when active
+- runtime file is removed on stop
+- `/api/status` is correct
+- `/api/ntrip/local-caster/clients` is correct
+- local-caster traffic / GGA capture behaves correctly
 
-### Step 6: Run unit tests on Pi
+## Step 4.4 — Verify native fallback mode explicitly
+
+Because native fallback regressed, it must be tested on purpose after being
+restored.
+
+At minimum verify:
+
+- known-base with local caster in native mode
+- outbound push in native mode if still supported
+- stop returns receiver to the expected state
+- client visibility still works
+
+## Step 4.5 — Verify metadata output
+
+Inspect:
+
+- `active-base.json`
+- RTKLIB logs
+- sourcetable output
+- operator-visible labels
+
+Confirm that model / firmware / version metadata are populated and formatted as
+intended.
+
+## Step 4.6 — Verify installer / service-management behavior
+
+Confirm on the Pi:
+
+- new dependencies are installed
+- sudoers includes all intended RTKLIB commands including `reset-failed`
+- `systemd` helper behavior works from the app user
+- final `survey365.service` hardening settings are intentional and documented
+
+## Step 4.7 — Run automated tests on-device too
 
 ```bash
 cd ~/survey365
@@ -650,81 +1185,146 @@ pip install -r requirements-dev.txt
 python -m pytest tests/ -v
 ```
 
-Confirm all tests pass in the Pi environment.
+The hardening branch should pass tests both locally and on the Pi.
 
 ---
 
-## Phase 7 — Fix Forward
+# Phase 5 — Fix-Forward Until Clean
 
-After the deployment verification in Phase 6, if any issues are found:
+After the first deployment of the hardening branch, there will likely still be
+follow-up fixes.
 
-1. Fix the issue on the `fix/rtklib-integration-hardening` branch.
-2. Commit with a descriptive message referencing the issue.
-3. Push to origin.
-4. Re-deploy to the Pi and re-verify the specific fix.
-5. Repeat until all Phase 6 checks pass cleanly.
+The correct process is:
+
+1. deploy
+2. verify
+3. identify issue
+4. fix on the hardening branch
+5. commit
+6. push
+7. redeploy
+8. re-verify
+9. repeat until every checklist item passes cleanly
+
+The branch is **not done** just because the code compiles. It is only done when:
+
+- all known issues in this document are resolved
+- automated tests pass
+- Pi integration testing passes
+- field-oriented verification passes
+- UI / docs are aligned
+- no new regressions remain open
 
 ---
 
-## Phase 8 — Open PR
+# Phase 6 — Completion Criteria
 
-Once all fixes are implemented, all tests pass, and field verification is
-complete:
+The hardening branch is considered 100% complete only when all of the following
+are true:
+
+## Architecture correctness
+
+- RTKLIB mode works cleanly
+- native rollback mode works cleanly for the promised compatibility window
+- receiver ownership remains in Survey365
+- RTKLIB metadata is correct and no longer placeholder-based
+
+## Runtime correctness
+
+- start / stop / resume / auto-resume work reliably
+- teardown uses the engine that is actually active
+- status APIs reflect reality
+- local-caster health reporting is internally consistent
+
+## Installer / deployment correctness
+
+- installer dependencies are complete
+- sudoers rules are complete
+- final systemd hardening choice is tested and documented
+
+## Operator-facing correctness
+
+- UI wording matches the actual product behavior
+- docs match the final implementation
+
+## Test completeness
+
+- focused automated tests exist and pass
+- Pi verification matrix has been run
+- any issues found during deployment have been fixed and re-verified
+
+---
+
+# Phase 7 — Final Deliverable PR
+
+Only after all completion criteria above are satisfied:
 
 ```bash
 git push origin fix/rtklib-integration-hardening
 ```
 
-Open a PR from `fix/rtklib-integration-hardening` → `main` with:
-- Title: `fix: RTKLIB integration hardening`
-- Description referencing this plan document and summarizing all fixes
-- Link to this file (`documentation/RTKLIB-INTEGRATION-FIXES.md`)
+Then open a new PR:
+
+- **Title:** `fix: RTKLIB integration hardening`
+- **Base:** `main`
+- **Head:** `fix/rtklib-integration-hardening`
+
+## PR description should include
+
+1. reference to this document
+2. summary of every issue fixed
+3. summary of Pi deployment / verification steps performed
+4. summary of automated tests added and run
+5. note that the branch was repeatedly deployed / fixed / redeployed until
+   behavior was stable
+
+And only **after all of that** should the PR be sent for review.
 
 ---
 
-## Complete File Change Manifest
+# Working File Checklist
 
-| File | Action | Fix # |
-|------|--------|-------|
-| `app/gnss/ntrip_caster.py` | Restore direct-broadcast mode | 1 |
-| `app/gnss/base_station.py` | Fix native path, engine tracking, outbound validation, runtime fields | 1, 3, 8, 11 |
-| `app/gnss/manager.py` | Add `_active_output_engine`, update MON-VER filter, fix descriptor | 3, 4 |
-| `app/gnss/quectel.py` | Add missing methods and attributes | 2 |
-| `app/gnss/ublox.py` | Add MON-VER poll/parse | 4 |
-| `app/gnss/serial_reader.py` | Move filter after checksum validation | 9 |
-| `app/version.py` | New file — app version constant | 4 |
-| `app/systemd.py` | Add `reset_failed_service()` | 5 |
-| `app/routes/mode.py` | Pass mode string to `start_base()` | 8 |
-| `scripts/setup-pi.sh` | Add reset-failed sudoers, pkg-config, unzip | 5, 6 |
-| `systemd/survey365.service` | Restore `NoNewPrivileges=true` (if test passes) | 10 |
-| `systemd/survey365-rtklib-*.service` | No changes expected | — |
-| `ui/admin.html` | Update logging labels | 7 |
-| `requirements-dev.txt` | New file — pytest deps | 12 |
-| `tests/__init__.py` | New file | 12 |
-| `tests/conftest.py` | New file — fixtures | 12 |
-| `tests/test_raw_relay.py` | New file | 12 |
-| `tests/test_launcher.py` | New file | 12 |
-| `tests/test_ntrip_caster_proxy.py` | New file | 12 |
-| `tests/test_migration.py` | New file | 12 |
-| `tests/test_serial_reader.py` | New file | 12 |
-| `documentation/RTKLIB-INTEGRATION-FIXES.md` | This file | — |
+This is the expected primary change surface for the hardening branch.
+
+| File | Purpose |
+|---|---|
+| `app/gnss/ntrip_caster.py` | restore native/direct mode and improve health semantics |
+| `app/gnss/base_station.py` | native fix, engine tracking, outbound validation, runtime contract updates |
+| `app/gnss/manager.py` | engine-state cleanup, descriptor logic, MON-VER flow integration |
+| `app/gnss/quectel.py` | backend contract completion |
+| `app/gnss/ublox.py` | MON-VER poll / parse support |
+| `app/gnss/serial_reader.py` | checksum-before-skip fix |
+| `app/gnss/raw_relay.py` | optional backpressure / broadcast refinement |
+| `app/systemd.py` | real service-state helpers, reset-failed helper |
+| `app/routes/status.py` | real service state and consistent health reporting |
+| `app/routes/mode.py` | runtime mode threading if needed |
+| `app/routes/ntrip.py` | optional validation / health-report alignment |
+| `app/rtklib/runtime.py` | runtime file contract review |
+| `app/rtklib/launcher.py` | runtime-field consumption review |
+| `app/version.py` | version source for descriptor metadata |
+| `scripts/setup-pi.sh` | deps + sudoers completion |
+| `systemd/survey365.service` | final hardening setting decision |
+| `ui/admin.html` | wording cleanup |
+| `CLAUDE.md` | final architecture wording |
+| `documentation/NATIVE-GNSS-ARCHITECTURE.md` | final architecture wording |
+| `requirements-dev.txt` | test dependencies |
+| `tests/...` | automated coverage |
 
 ---
 
-## Implementation Order
+# Final instruction
 
-The fixes should be implemented in this order to avoid merge conflicts and
-allow incremental testing:
+Do **not** start implementing these fixes on the current feature branch.
 
-1. Fix 2 — QuectelBackend (standalone, no dependencies)
-2. Fix 1 — Native NTRIPCaster (largest change, touches ntrip_caster + base_station)
-3. Fix 3 — Engine tracking in stop_base (touches base_station + manager)
-4. Fix 4 — MON-VER + descriptor (touches ublox + manager + base_station + new version.py)
-5. Fix 9 — Serial reader checksum order (standalone)
-6. Fix 10 — NoNewPrivileges (standalone systemd change, needs Pi test)
-7. Fix 11 — Outbound validation (small base_station change)
-8. Fix 5 — reset-failed sudoers (standalone setup-pi change)
-9. Fix 6 — pkg-config/unzip deps (standalone setup-pi change)
-10. Fix 7 — UI labels (standalone HTML change)
-11. Fix 8 — Runtime file fields (base_station + mode route)
-12. Fix 12 — Unit tests (depends on all other fixes being in place)
+The correct sequence is:
+
+1. merge the current PR,
+2. clean up the old branch,
+3. create `fix/rtklib-integration-hardening`,
+4. implement the fixes above,
+5. deploy to the Pi,
+6. test and verify everything,
+7. fix anything found,
+8. redeploy and retest,
+9. repeat until everything is 100% complete,
+10. then open a new PR for review.
