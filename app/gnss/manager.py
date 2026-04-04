@@ -286,7 +286,7 @@ class GNSSManager:
         loop = self.serial_reader._loop
         if not data or loop is None or not loop.is_running():
             return
-        loop.call_soon_threadsafe(asyncio.create_task, self.raw_relay.publish(data))
+        loop.call_soon_threadsafe(self.raw_relay.publish_nowait, data)
 
 
 # Module-level singleton

@@ -14,7 +14,10 @@ class RawRelay:
         self.port = port
         self._server: asyncio.Server | None = None
         self._clients: set[asyncio.StreamWriter] = set()
+        self._queue: asyncio.Queue[bytes] | None = None
+        self._publish_task: asyncio.Task | None = None
         self._running = False
+        self._dropped_chunks = 0
 
     @property
     def client_count(self) -> int:
@@ -24,20 +27,48 @@ class RawRelay:
         if self._server is not None:
             return
         self._running = True
+        self._queue = asyncio.Queue(maxsize=512)
         self._server = await asyncio.start_server(self._handle_client, self.host, self.port)
+        self._publish_task = asyncio.create_task(self._publish_loop())
         logger.info("Raw GNSS relay listening on %s:%d", self.host, self.port)
 
     async def stop(self) -> None:
         self._running = False
+        if self._publish_task is not None:
+            self._publish_task.cancel()
+            try:
+                await self._publish_task
+            except asyncio.CancelledError:
+                pass
+            self._publish_task = None
         for writer in list(self._clients):
             await self._close_client(writer)
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
             self._server = None
+        self._queue = None
         logger.info("Raw GNSS relay stopped")
 
-    async def publish(self, data: bytes) -> None:
+    def publish_nowait(self, data: bytes) -> None:
+        if not data or not self._running or self._queue is None:
+            return
+        try:
+            self._queue.put_nowait(data)
+        except asyncio.QueueFull:
+            self._dropped_chunks += 1
+            if self._dropped_chunks == 1 or self._dropped_chunks % 100 == 0:
+                logger.warning("Raw GNSS relay queue full; dropped %d chunks", self._dropped_chunks)
+
+    async def _publish_loop(self) -> None:
+        while self._running:
+            try:
+                data = await self._queue.get()
+            except asyncio.CancelledError:
+                break
+            await self._broadcast(data)
+
+    async def _broadcast(self, data: bytes) -> None:
         dead: list[asyncio.StreamWriter] = []
         for writer in list(self._clients):
             try:
