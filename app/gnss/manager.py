@@ -323,13 +323,11 @@ class GNSSManager:
         # NAV-PVT and NAV-SAT always queued
         if msg_class == 0x01 and msg_id in {0x07, 0x35}:
             return True
-        # MON-VER response queued while poll is pending
-        if (
-            msg_class == UBX_MON_CLASS
-            and msg_id == UBX_MON_VER_ID
-            and isinstance(self.backend, UBloxBackend)
-            and self.backend._mon_ver_pending
-        ):
+        # Always allow MON-VER through — it is a rare one-shot response and
+        # gating on the cross-thread _mon_ver_pending flag caused an
+        # intermittent race where the response was discarded before the flag
+        # propagated to the serial-reader thread.
+        if msg_class == UBX_MON_CLASS and msg_id == UBX_MON_VER_ID:
             return True
         return False
 
@@ -337,13 +335,8 @@ class GNSSManager:
         # Always allow NAV-PVT and NAV-SAT
         if msg_class == 0x01 and msg_id in {0x07, 0x35}:
             return True
-        # Allow MON-VER response through while a poll is pending
-        if (
-            msg_class == UBX_MON_CLASS
-            and msg_id == UBX_MON_VER_ID
-            and isinstance(self.backend, UBloxBackend)
-            and self.backend._mon_ver_pending
-        ):
+        # Always allow MON-VER (see _should_queue_frame comment)
+        if msg_class == UBX_MON_CLASS and msg_id == UBX_MON_VER_ID:
             return True
         return False
 
