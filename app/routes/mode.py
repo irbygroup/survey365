@@ -507,12 +507,6 @@ async def _run_cors_establish(
             "session_id": None,
         })
 
-        # Configure F9P as rover (disable TMODE3)
-        try:
-            await gnss_manager.configure_rover()
-        except Exception as exc:
-            logger.error("Failed to configure rover mode: %s", exc)
-
         # Start NTRIP client
         ntrip_bytes = 0
 
